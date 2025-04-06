@@ -1,2 +1,3 @@
 venv/
 credential*.json
+.env
