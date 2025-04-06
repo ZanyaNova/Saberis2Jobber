@@ -2,7 +2,7 @@ Below is the detailed documentation of the planned tech stack for the Saberis-to
 
 ---
 
-## Planned Tech Stack Overview
+## Pla;nned Tech Stack Overview
 
 ### 1. **Programming Language & Runtime**
 
