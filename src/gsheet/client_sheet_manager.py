@@ -1,6 +1,7 @@
 import gspread
 from dotenv import load_dotenv
 import os
+from sheet_logging import add_sheet_log
 
 def get_client_id(saberis_id: str) -> str:
     load_dotenv()
@@ -22,12 +23,16 @@ def get_client_id(saberis_id: str) -> str:
 
         saberis_column = sht_records.col_values(saberis_column_index)
 
-        first_empty_row = len(saberis_column) + 1
+        new_row_index = len(saberis_column) + 1
 
-        sht_records.update_cell(first_empty_row, saberis_column_index, saberis_id)
-        sht_records.update_cell(first_empty_row, jobber_column_index, placeholder_jobber_id)
+        sht_records.update_cell(new_row_index, saberis_column_index, saberis_id)
+        sht_records.update_cell(new_row_index, jobber_column_index, placeholder_jobber_id)
 
         print('New jobber ID created: ', placeholder_jobber_id)
+
+        log_message = f'No entry found for {saberis_id}. Successfully created new Jobber client ID: {placeholder_jobber_id}'
+
+        add_sheet_log(0, 'client_sheet_manager', log_message)
 
         return None
     
@@ -44,4 +49,4 @@ def get_adjacent_value(sheet, search_value: str) -> str:
 
 
 
-get_client_id("ClientName3")
+get_client_id("KiahsBestClient45")
