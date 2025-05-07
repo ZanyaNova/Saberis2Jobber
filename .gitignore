@@ -1,3 +1,4 @@
 venv/
 credential*.json
 .env
+example_doc/

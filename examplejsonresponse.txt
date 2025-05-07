@@ -1,0 +1,475 @@
+
+{
+  "SaberisOrderDocument": {
+    "DocumentVersion": "1.0",
+    "Order": {
+      "Source": "kitchens",
+      "Date": "2025.05.05",
+      "OrderNumber": "",
+      "Type": "",
+      "Username": "burnich_office",
+      "Customer": {
+        "Number": "",
+        "POnumber": "",
+        "Name": "",
+        "Address": "",
+        "City": "",
+        "StateOrProvince": "",
+        "ZipOrPostal": ""
+      },
+      "StoreNumber": "",
+      "SalesPerson": "",
+      "Shipping": {
+        "Address": "",
+        "Address2": "",
+        "City": "",
+        "StateOrProvince": "",
+        "ZipOrPostal": ""
+      },
+      "Group": {
+        "GroupType": null,
+        "Item": [
+          {
+            "Type": "Text",
+            "LineID": "1",
+            "Description": "Catalog=RDHRT42A"
+          },
+          {
+            "Type": "Text",
+            "LineID": "2",
+            "Description": "Pricelevel"
+          },
+          {
+            "Type": "Text",
+            "LineID": "3",
+            "Description": "Door Style=Shaker (70000)"
+          },
+          {
+            "Type": "Text",
+            "LineID": "4",
+            "Description": "Drawer Front Options=1/8\" Round-Over Slab (65)"
+          },
+          {
+            "Type": "Text",
+            "LineID": "5",
+            "Description": "Drawer Box=Hardwood Standard"
+          },
+          {
+            "Type": "Text",
+            "LineID": "6",
+            "Description": "Construction Options=Door Edge 65"
+          },
+          {
+            "Type": "Text",
+            "LineID": "7",
+            "Description": "Construction Options=Knotty Alder"
+          },
+          {
+            "Type": "Text",
+            "LineID": "8",
+            "Description": "Construction Options=Plywood"
+          },
+          {
+            "Type": "Text",
+            "LineID": "9",
+            "Description": "Construction Options=Standard Depth"
+          },
+          {
+            "Type": "Text",
+            "LineID": "10",
+            "Description": "Construction Options=Standard FB Shelves"
+          },
+          {
+            "Type": "Text",
+            "LineID": "11",
+            "Description": "Finish Options=Natural (0000-A)"
+          },
+          {
+            "Type": "Text",
+            "LineID": "12",
+            "Description": "Finish Options=Flat - Matte 4-8 Degree Sheen"
+          },
+          {
+            "Type": "Text",
+            "LineID": "13",
+            "Description": "Finish Options=No Distressing"
+          },
+          {
+            "Type": "Text",
+            "LineID": "14",
+            "Description": "Finish Options=No Glaze"
+          },
+          {
+            "Type": "Product",
+            "LineID": "16",
+            "Description": "SB36",
+            "Quantity": "1",
+            "List": "0.00",
+            "Selling": "0.00",
+            "Cost": "0.00",
+            "SKU": "SOCABINETS",
+            "ProductType": "DEFAULT",
+            "ProductCode": "SOCABINETS",
+            "UOM": "",
+            "ManufacturerPartNumber": "",
+            "ManufacturerSKU": "",
+            "Volume": "0",
+            "Weight": "0"
+          },
+          {
+            "Type": "Product",
+            "LineID": "15",
+            "Description": "TOE 4.5",
+            "Quantity": "1",
+            "List": "0.00",
+            "Selling": "0.00",
+            "Cost": "0.00",
+            "SKU": "SOCABINETS",
+            "ProductType": "DEFAULT",
+            "ProductCode": "SOCABINETS",
+            "UOM": "",
+            "ManufacturerPartNumber": "",
+            "ManufacturerSKU": "",
+            "Volume": "0",
+            "Weight": "0"
+          }
+        ]
+      }
+    }
+  }
+}
+
+  "SaberisOrderDocument": {
+    "DocumentVersion": "1.0",
+    "Order": {
+      "Source": "kitchens",
+      "Date": "2025.05.05",
+      "OrderNumber": "",
+      "Type": "",
+      "Username": "burnich_office",
+      "Customer": {
+        "Number": "",
+        "POnumber": "",
+        "Name": "",
+        "Address": "",
+        "City": "",
+        "StateOrProvince": "",
+        "ZipOrPostal": ""
+      },
+      "StoreNumber": "",
+      "SalesPerson": "",
+      "Shipping": {
+        "Address": "",
+        "Address2": "",
+        "City": "",
+        "StateOrProvince": "",
+        "ZipOrPostal": ""
+      },
+      "Group": {
+        "GroupType": null,
+        "Item": [
+          {
+            "Type": "Text",
+            "LineID": "1",
+            "Description": "Catalog=KWP_25C1"
+          },
+          {
+            "Type": "Text",
+            "LineID": "2",
+            "Description": "Pricelevel=PRICE"
+          },
+          {
+            "Type": "Text",
+            "LineID": "3",
+            "Description": "Cabinet Style=Georgetown (B)"
+          },
+          {
+            "Type": "Text",
+            "LineID": "4",
+            "Description": "Species / Finish=Slate Maple"
+          },
+          {
+            "Type": "Product",
+            "LineID": "5",
+            "Description": "WAL213012",
+            "Quantity": "1",
+            "List": "237.00",
+            "Selling": "237.00",
+            "Cost": "237.00",
+            "SKU": "SOCABINETS",
+            "ProductType": "DEFAULT",
+            "ProductCode": "SOCABINETS",
+            "UOM": "",
+            "ManufacturerPartNumber": "",
+            "ManufacturerSKU": "",
+            "Volume": "5",
+            "Weight": "39"
+          },
+          {
+            "Type": "Product",
+            "LineID": "6",
+            "Description": "BAS212434",
+            "Quantity": "1",
+            "List": "353.00",
+            "Selling": "353.00",
+            "Cost": "353.00",
+            "SKU": "SOCABINETS",
+            "ProductType": "DEFAULT",
+            "ProductCode": "SOCABINETS",
+            "UOM": "",
+            "ManufacturerPartNumber": "",
+            "ManufacturerSKU": "",
+            "Volume": "11",
+            "Weight": "63"
+          },
+          {
+            "Type": "Product",
+            "LineID": "7",
+            "Description": "BAS152434",
+            "Quantity": "1",
+            "List": "319.00",
+            "Selling": "319.00",
+            "Cost": "319.00",
+            "SKU": "SOCABINETS",
+            "ProductType": "DEFAULT",
+            "ProductCode": "SOCABINETS",
+            "UOM": "",
+            "ManufacturerPartNumber": "",
+            "ManufacturerSKU": "",
+            "Volume": "8",
+            "Weight": "53"
+          },
+          {
+            "Type": "Product",
+            "LineID": "8",
+            "Description": "BCC452434",
+            "Quantity": "1",
+            "List": "435.00",
+            "Selling": "435.00",
+            "Cost": "435.00",
+            "SKU": "SOCABINETS",
+            "ProductType": "DEFAULT",
+            "ProductCode": "SOCABINETS",
+            "UOM": "",
+            "ManufacturerPartNumber": "",
+            "ManufacturerSKU": "",
+            "Volume": "21",
+            "Weight": "90"
+          },
+          {
+            "Type": "Text",
+            "LineID": "9",
+            "Description": "Catalog=KWP_25C2"
+          },
+          {
+            "Type": "Text",
+            "LineID": "10",
+            "Description": "Pricelevel=PRICE"
+          },
+          {
+            "Type": "Text",
+            "LineID": "11",
+            "Description": "Cabinet Style=Georgetown (B)"
+          },
+          {
+            "Type": "Text",
+            "LineID": "12",
+            "Description": "Species / Finish=White (%)"
+          },
+          {
+            "Type": "Product",
+            "LineID": "13",
+            "Description": "WAL243012",
+            "Quantity": "1",
+            "List": "328.54",
+            "Selling": "328.54",
+            "Cost": "328.54",
+            "SKU": "SOCABINETS",
+            "ProductType": "DEFAULT",
+            "ProductCode": "SOCABINETS",
+            "UOM": "",
+            "ManufacturerPartNumber": "",
+            "ManufacturerSKU": "",
+            "Volume": "6",
+            "Weight": "45"
+          },
+          {
+            "Type": "Product",
+            "LineID": "14",
+            "Description": "WAL361812",
+            "Quantity": "1",
+            "List": "328.54",
+            "Selling": "328.54",
+            "Cost": "328.54",
+            "SKU": "SOCABINETS",
+            "ProductType": "DEFAULT",
+            "ProductCode": "SOCABINETS",
+            "UOM": "",
+            "ManufacturerPartNumber": "",
+            "ManufacturerSKU": "",
+            "Volume": "5",
+            "Weight": "30"
+          },
+          {
+            "Type": "Product",
+            "LineID": "15",
+            "Description": "WAL453012",
+            "Quantity": "1",
+            "List": "434.66",
+            "Selling": "434.66",
+            "Cost": "434.66",
+            "SKU": "SOCABINETS",
+            "ProductType": "DEFAULT",
+            "ProductCode": "SOCABINETS",
+            "UOM": "",
+            "ManufacturerPartNumber": "",
+            "ManufacturerSKU": "",
+            "Volume": "11",
+            "Weight": "82"
+          }
+        ]
+      }
+    }
+  }
+}
+
+{
+  "SaberisOrderDocument": {
+    "DocumentVersion": "1.0",
+    "Order": {
+      "Source": "kitchens",
+      "Date": "2025.05.05",
+      "OrderNumber": "",
+      "Type": "",
+      "Username": "burnich_office",
+      "Customer": {
+        "Number": "",
+        "POnumber": "",
+        "Name": "",
+        "Address": "",
+        "City": "",
+        "StateOrProvince": "",
+        "ZipOrPostal": ""
+      },
+      "StoreNumber": "",
+      "SalesPerson": "",
+      "Shipping": {
+        "Address": "",
+        "Address2": "",
+        "City": "",
+        "StateOrProvince": "",
+        "ZipOrPostal": ""
+      },
+      "Group": {
+        "GroupType": null,
+        "Item": [
+          {
+            "Type": "Text",
+            "LineID": "1",
+            "Description": "Catalog=RDHRT42A"
+          },
+          {
+            "Type": "Text",
+            "LineID": "2",
+            "Description": "Pricelevel"
+          },
+          {
+            "Type": "Text",
+            "LineID": "3",
+            "Description": "Door Style=Shaker (70000)"
+          },
+          {
+            "Type": "Text",
+            "LineID": "4",
+            "Description": "Drawer Front Options=1/8\" Round-Over Slab (65)"
+          },
+          {
+            "Type": "Text",
+            "LineID": "5",
+            "Description": "Drawer Box=Hardwood Standard"
+          },
+          {
+            "Type": "Text",
+            "LineID": "6",
+            "Description": "Construction Options=Door Edge 65"
+          },
+          {
+            "Type": "Text",
+            "LineID": "7",
+            "Description": "Construction Options=Knotty Alder"
+          },
+          {
+            "Type": "Text",
+            "LineID": "8",
+            "Description": "Construction Options=Plywood"
+          },
+          {
+            "Type": "Text",
+            "LineID": "9",
+            "Description": "Construction Options=Standard Depth"
+          },
+          {
+            "Type": "Text",
+            "LineID": "10",
+            "Description": "Construction Options=Standard FB Shelves"
+          },
+          {
+            "Type": "Text",
+            "LineID": "11",
+            "Description": "Finish Options=Natural (0000-A)"
+          },
+          {
+            "Type": "Text",
+            "LineID": "12",
+            "Description": "Finish Options=Flat - Matte 4-8 Degree Sheen"
+          },
+          {
+            "Type": "Text",
+            "LineID": "13",
+            "Description": "Finish Options=No Distressing"
+          },
+          {
+            "Type": "Text",
+            "LineID": "14",
+            "Description": "Finish Options=No Glaze"
+          },
+          {
+            "Type": "Product",
+            "LineID": "16",
+            "Description": "SB36",
+            "Quantity": "1",
+            "List": "0.00",
+            "Selling": "0.00",
+            "Cost": "0.00",
+            "SKU": "SOCABINETS",
+            "ProductType": "DEFAULT",
+            "ProductCode": "SOCABINETS",
+            "UOM": "",
+            "ManufacturerPartNumber": "",
+            "ManufacturerSKU": "",
+            "Volume": "0",
+            "Weight": "0"
+          },
+          {
+            "Type": "Product",
+            "LineID": "15",
+            "Description": "TOE 4.5",
+            "Quantity": "1",
+            "List": "0.00",
+            "Selling": "0.00",
+            "Cost": "0.00",
+            "SKU": "SOCABINETS",
+            "ProductType": "DEFAULT",
+            "ProductCode": "SOCABINETS",
+            "UOM": "",
+            "ManufacturerPartNumber": "",
+            "ManufacturerSKU": "",
+            "Volume": "0",
+            "Weight": "0"
+          }
+        ]
+      }
+    }
+  }
+}
+
