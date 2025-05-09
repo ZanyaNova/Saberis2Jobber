@@ -7,7 +7,7 @@ def get_client_id(saberis_id: str) -> str:
     load_dotenv()
 
     g_account = gspread.service_account()
-    client_workbook = g_account.open_by_url(os.environ.get('WORKBOOK_ID'))
+    client_workbook = g_account.open_by_url(os.environ.get('WORKBOOK_URL'))
     sht_records = client_workbook.worksheet("Records")
 
     jobber_id = get_adjacent_value(sht_records, saberis_id)

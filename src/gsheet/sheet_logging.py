@@ -7,7 +7,7 @@ def add_sheet_log(priority: str, context: str, message: str):
     load_dotenv()
 
     g_account = gspread.service_account()
-    client_workbook = g_account.open_by_url(os.environ.get('WORKBOOK_ID'))
+    client_workbook = g_account.open_by_url(os.environ.get('WORKBOOK_URL'))
     sht_records = client_workbook.worksheet("Log")
 
     logs = sht_records.col_values(1)

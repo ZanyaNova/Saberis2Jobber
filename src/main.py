@@ -1,302 +1,234 @@
-from __future__ import annotations
-import hashlib
-import json
-import os
 import time
-from dataclasses import dataclass, field, asdict
-from datetime import datetime
-from typing import Any, List, Optional
+import os
+import json 
+import pathlib 
+import glob 
 
-# ---------------------------------------------------------------------------
-# models.py (embedded)
-# ---------------------------------------------------------------------------
-@dataclass
-class SaberisLineItem:
+from flask import Flask, request, redirect, jsonify, url_for, session 
 
-    type: str  
-    description: str
-    quantity: float = 1.0
-    list_price: float = 0.0
-    selling_price: float = 0.0
-    cost: float = 0.0
+# Auth and Config
+from jobber_config import load_dotenv 
+from jobber_auth_flow import get_authorization_url, exchange_code_for_token, get_valid_access_token, verify_state_parameter
+from token_storage import load_tokens 
 
-    @staticmethod
-    def from_json(obj: dict[str, Any]) -> "SaberisLineItem":
-        item_type = obj.get("Type") or obj.get("type")
-        if item_type == "Text":
-            return SaberisLineItem(type="Text", description=obj.get("Text", ""))
-        # Assume "Product"
-        return SaberisLineItem(
-            type="Product",
-            description=obj.get("Description", "Unnamed Product"),
-            quantity=float(obj.get("Quantity", 1)),
-            list_price=float(obj.get("List", 0)),
-            selling_price=float(obj.get("Selling", 0)),
-            cost=float(obj.get("Cost", 0)),
-        )
+# Jobber Business Logic
+from jobber_models import SaberisOrder, saberis_to_jobber 
+from jobber_client_module import JobberClient 
 
+load_dotenv() 
 
-@dataclass
-class SaberisOrder:
-
-    username: str
-    created_at: datetime
-    customer_name: str
-    shipping_address: dict[str, str]
-    lines: List[SaberisLineItem]
-
-    @staticmethod
-    def from_json(doc: dict[str, Any]) -> "SaberisOrder":
-        header = doc.get("Header", {})
-        shipping = header.get("Shipping", {}) or {}
-        # Flatten address dict to always include the same keys
-        ship_addr = {k: shipping.get(k, "") for k in ("address", "city", "state", "postalCode", "country")}
-        lines: List[SaberisLineItem] = []
-        for group in doc.get("Group", []):
-            for raw in group.get("Line", []):
-                lines.append(SaberisLineItem.from_json(raw))
-        return SaberisOrder(
-            username=header.get("Username", "unknown"),
-            created_at=datetime.strptime(header.get("Date", "1970-01-01"), "%Y-%m-%d"),
-            customer_name=header.get("Customer", {}).get("Name", "Unnamed Client"),
-            shipping_address=ship_addr,
-            lines=lines,
-        )
-
-    # ---------------------------------------------------------------------
-    # Helpers that the worker will use
-    # ---------------------------------------------------------------------
-    def first_catalog_code(self) -> str:
-        for li in self.lines:
-            if li.type == "Text" and li.description.startswith("Catalog="):
-                return li.description.split("=", 1)[1]
-        return "NA"
-
-    def unique_key(self) -> str:
-        """Human‑readable deterministic idempotency key."""
-        payload = json.dumps([asdict(li) for li in self.lines], sort_keys=True).encode()
-        md5_part = hashlib.md5(payload).hexdigest()[:4]
-        return f"{self.username}_{self.created_at:%Y%m%d}_{self.first_catalog_code()}_{md5_part}"
+# Flask App Initialization
+app = Flask(__name__)
+# Secret key is needed for session management (to store OAuth state)
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(24))
 
 
 # ---------------------------------------------------------------------------
-# transform.py (embedded)
+# Flask Web Routes for OAuth
 # ---------------------------------------------------------------------------
-@dataclass
-class QuoteLineInput:
-    name: str
-    quantity: float
-    unit_price: float
-    unit_cost: float | None = None
-    taxable: bool = False
+@app.route('/')
+def home():
+    """Home page with options to authorize or see status."""
+    tokens = load_tokens()
+    # get_valid_access_token will attempt refresh if needed
+    status_message = "Checking authorization status..."
+    try:
+        is_authorized = get_valid_access_token() is not None
+        status_message = "Authorized" if is_authorized else "Not Authorized (or token refresh failed)"
+    except Exception as e:
+        status_message = f"Error checking auth status: {e}"
 
+    auth_url_val = url_for('authorize_jobber_route') # Renamed route function
+    callback_url_val = url_for('jobber_callback_route', _external=True) # Renamed route function
+    
+    message = request.args.get('message', '') # For displaying success/error messages
 
-@dataclass
-class QuoteCreateInput:
-    client_id: str  # Jobber ID (or temp slug ― stubbed for now)
-    property_id: str
-    title: str
-    message: str
-    line_items: List[QuoteLineInput]
+    return f"""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Jobber Integration Service</title>
+        <style>
+            body {{ font-family: sans-serif; margin: 20px; line-height: 1.6; }}
+            h1 {{ color: #333; }}
+            p {{ color: #555; }}
+            code {{ background-color: #f4f4f4; padding: 2px 6px; border-radius: 4px; }}
+            .button {{ display: inline-block; padding: 10px 15px; background-color: #007bff; color: white; text-decoration: none; border-radius: 5px; }}
+            .button:hover {{ background-color: #0056b3; }}
+            .message {{ padding: 10px; margin-bottom: 15px; border-radius: 4px; }}
+            .success {{ background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }}
+            .error {{ background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }}
+        </style>
+    </head>
+    <body>
+        <h1>Jobber Integration Service</h1>
+        {f'<div class="message success">{message}</div>' if message and "successful" in message.lower() else ''}
+        {f'<div class="message error">{message}</div>' if message and "failed" in message.lower() else ''}
+        <p><strong>Status:</strong> {status_message}</p>
+        <p><a href="{auth_url_val}" class="button">Authorize with Jobber</a></p>
+        <p>Ensure your Jobber App Redirect URI is set to: <code>{callback_url_val}</code></p>
+        <p>If you've authorized and the worker isn't running, you might need to start it separately using <code>python main.py worker</code>.</p>
+    </body>
+    </html>
+    """
 
+@app.route('/authorize_jobber_start') # Renamed to avoid conflict with any module named authorize_jobber
+def authorize_jobber_route():
+    """Redirects the user to Jobber's authorization page."""
+    auth_url = get_authorization_url() # This now generates and stores state via jobber_auth_flow
+    # The state is stored in _oauth_state_store in jobber_auth_flow.py
+    # For Flask, it's better to use Flask's session to store the state.
+    # Let's modify get_authorization_url to return state, and store it here.
+    # For now, assuming _oauth_state_store in jobber_auth_flow is sufficient for this simple case.
+    print(f"Redirecting user to Jobber for authorization: {auth_url}")
+    return redirect(auth_url)
 
-def saberis_to_jobber(order: SaberisOrder, client_id: str, property_id: str) -> QuoteCreateInput:
-    # Title and message extraction ---------------------------------------
-    title = order.first_catalog_code()
-    message_lines: List[str] = []
-    for li in order.lines:
-        if li.type == "Text" and not li.description.startswith("Catalog="):
-            message_lines.append(li.description)
-    message = "\n".join(message_lines)
+@app.route('/jobber/callback') # Actual callback path
+def jobber_callback_route():
+    """
+    Handles the callback from Jobber after user authorization.
+    Exchanges the authorization code for tokens.
+    """
+    code = request.args.get('code')
+    received_state = request.args.get('state')
 
-    # Line items ----------------------------------------------------------
-    jobber_lines: List[QuoteLineInput] = []
-    for li in order.lines:
-        if li.type != "Product":
-            continue
-        jobber_lines.append(
-            QuoteLineInput(
-                name=li.description,
-                quantity=li.quantity,
-                unit_price=li.selling_price,
-                unit_cost=li.cost if li.cost else None,
-                taxable=False,
-            )
-        )
-    if not jobber_lines:
-        # Ensure quote isn't empty – create a placeholder $0 line
-        jobber_lines.append(QuoteLineInput(name="Misc. Items", quantity=1, unit_price=0))
+    # Verify the state parameter to prevent CSRF.
+    # The verify_state_parameter function is now in jobber_auth_flow.
+    if not verify_state_parameter(received_state):
+        print("OAuth state verification failed. Aborting authorization.")
+        return redirect(url_for('home', message="Authorization failed: Invalid state. Please try again."))
 
-    return QuoteCreateInput(
-        client_id=client_id,
-        property_id=property_id,
-        title=title,
-        message=message,
-        line_items=jobber_lines,
-    )
+    if not code:
+        # As per Jobber docs, if user denies, they are redirected back with no additional params.
+        print("User denied access or no authorization code provided by Jobber.")
+        return redirect(url_for('home', message="Authorization failed: User denied access or no code received."))
 
-
-# ---------------------------------------------------------------------------
-# jobber_client.py (embedded)
-# ---------------------------------------------------------------------------
-class JobberClient:
-
-    ENDPOINT = "https://api.getjobber.com/api/graphql"
-
-    def __init__(self, token: str | None = None):
-        self.token = token or os.getenv("JOBBER_TOKEN", "stub-token")
-
-    # ––––– Internal helpers –––––
-    def _post(self, query: str, variables: dict[str, Any] | None = None) -> dict[str, Any]:
-        import requests  # local import to keep optional dependency
-
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.token}",
-        }
-        payload = {"query": query, "variables": variables or {}}
-        # NOTE: With token == "stub-token" this *will* 401; in the playground you
-        # can paste the generated query + vars manually.
-        resp = requests.post(self.ENDPOINT, headers=headers, json=payload, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
-        if data.get("errors"):
-            raise RuntimeError(data["errors"])
-        return data["data"]
-
-    # ––––– Public API –––––
-    def create_client_and_property(self, order: SaberisOrder) -> tuple[str, str]:
-        """Creates a new client + property.  Returns (client_id, property_id).
-
-        NOTE: for this stub we generate dummy ids so downstream code can run
-        without touching the network.  Replace with real GraphQL calls later.
-        """
-        fake_id = lambda prefix: f"{prefix}_{hash(order.unique_key()) & 0xFFFF:04x}"
-        return fake_id("client"), fake_id("property")
-
-    def create_and_send_quote(self, payload: QuoteCreateInput) -> str:
-        """Creates a quote and immediately sends it (auto‑send).  Returns quote_id."""
-        # Build variables according to Jobber's expected shape
-        quote_lines = [
-            {
-                "description": li.name,
-                "quantity": li.quantity,
-                "unitPrice": li.unit_price,
-                **({"unitCost": li.unit_cost} if li.unit_cost is not None else {}),
-            }
-            for li in payload.line_items
-        ]
-        variables = {
-            "input": {
-                "clientId": payload.client_id,
-                "propertyId": payload.property_id,
-                "title": payload.title,
-                "message": payload.message,
-                "lineItems": quote_lines,
-                # Autodraft flag may be needed; Jobber docs unclear – we’ll try without.
-            }
-        }
-        # -----------------------------------------------------------------
-        # Quote creation mutation (educated guess)
-        # -----------------------------------------------------------------
-        create_mutation = """
-        mutation QuoteCreate($input: QuoteCreateInput!) {
-          quoteCreate(input: $input) {
-            quote { id quoteNumber quoteStatus }
-            userErrors { message path }
-          }
-        }
-        """
-        data = self._post(create_mutation, variables)
-        quote = data["quoteCreate"]["quote"]
-        quote_id = quote["id"]
-
-        # -----------------------------------------------------------------
-        # Auto‑send mutation (educated guess)
-        # -----------------------------------------------------------------
-        send_mutation = """
-        mutation QuoteSend($id: ID!) {
-          quoteSend(id: $id) {
-            quote { id quoteStatus }
-            userErrors { message path }
-          }
-        }
-        """
-        self._post(send_mutation, {"id": quote_id})
-        return quote_id
-
+    print(f"Received authorization code from Jobber: {code[:20]}...") 
+    if exchange_code_for_token(code):
+        print("Authorization successful. Tokens stored.")
+        return redirect(url_for('home', message="Authorization successful! You can now start the worker if it's not running."))
+    else:
+        print("Failed to exchange code for tokens.")
+        return redirect(url_for('home', message="Authorization failed: Could not exchange code for token. Check server logs."))
 
 # ---------------------------------------------------------------------------
-# sheet_helpers.py (embedded) – upgrades to client_sheet_manager.py & sheet_logging.py
+# Polling Worker Logic 
 # ---------------------------------------------------------------------------
-try:
-    import gspread
-    from oauth2client.service_account import ServiceAccountCredentials
-except ImportError:
-    gspread = None  # type: ignore
+POLL_SECONDS = 30 
 
-class SheetContext:
-    """Context mgr that opens the workbook once per poll cycle."""
+def poll_once(jobber_client: JobberClient) -> None:
+    """One poll cycle – fetch Saberis docs, process, create Jobber items."""
+    print(f"\n--- Starting poll cycle at {time.strftime('%Y-%m-%d %H:%M:%S')} ---")
+    
+    BASE_DIR = pathlib.Path(__file__).resolve().parent
+    DOC_DIR  = BASE_DIR / "example_docs" 
 
-    def __init__(self, sheet_key_env="GOOGLE_SHEET_KEY", creds_json_env="GOOGLE_SVC_CREDS"):
-        self.sheet_key = os.getenv(sheet_key_env)
-        self.creds_json = os.getenv(creds_json_env)
-        if not (self.sheet_key and self.creds_json):
-            raise RuntimeError("Google Sheets env vars not set – skipping Sheets ops.")
-        self.gc = None
-        self.wb = None
+    if not DOC_DIR.is_dir():
+        print(f"Warning: Example documents directory not found at {DOC_DIR}")
+        print("Please create it and add sample JSON files (e.g., order1.json) to test the polling worker.")
+        return
 
-    def __enter__(self):
-        if gspread is None:
-            raise RuntimeError("gspread not installed.")
-        scope = [
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive.file",
-        ]
-        creds = ServiceAccountCredentials.from_json_keyfile_name(self.creds_json, scope)
-        self.gc = gspread.authorize(creds)
-        self.wb = self.gc.open_by_key(self.sheet_key)
-        return self.wb
+    sample_files = list(DOC_DIR.glob("*.json"))
+    if not sample_files:
+        print(f"No sample JSON files found in {DOC_DIR}. Skipping Saberis processing for this cycle.")
+        return
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        # gspread doesn’t need explicit close
-        pass
+    for path_obj in sample_files:
+        path_str = str(path_obj)
+        print(f"Processing Saberis document: {path_str}")
+        try:
+            doc_content = path_obj.read_text()
+            if not doc_content.strip():
+                print(f"Warning: File {path_str} is empty. Skipping.")
+                continue
+            doc = json.loads(doc_content)
+            order = SaberisOrder.from_json(doc)
 
+            client_id, property_id = jobber_client.create_client_and_property(order)
+            quote_payload = saberis_to_jobber(order, client_id, property_id)
+            quote_id = jobber_client.create_and_send_quote(quote_payload)
+            print(f"Successfully created & sent quote {quote_id} for Saberis order {order.unique_key()}")
 
-# ---------------------------------------------------------------------------
-# worker.py (embedded)
-# ---------------------------------------------------------------------------
-POLL_SECONDS = 30
-
-
-def poll_once(jobber: JobberClient) -> None:
-    """One poll cycle – fetch *stub* Saberis docs, process, update sheets."""
-    # TODO: Replace with real Saberis HTTP fetch; for now load sample JSON file(s)
-    import glob, pathlib
-
-    BASE_DIR = pathlib.Path(__file__).parent.parent
-    DOC_DIR  = BASE_DIR / "example_docs"
-
-    for path in glob.glob(str(DOC_DIR / "*.json")):
-        doc = json.loads(pathlib.Path(path).read_text())
-        order = SaberisOrder.from_json(doc)
-
-        # Check dashboard (skipped for stub) –> assume new every time
-        client_id, property_id = jobber.create_client_and_property(order)
-        quote_payload = saberis_to_jobber(order, client_id, property_id)
-        quote_id = jobber.create_and_send_quote(quote_payload)
-        print(f"Created & sent quote {quote_id} for {order.unique_key()}")
+        except json.JSONDecodeError as e:
+            print(f"Error decoding JSON from {path_str}: {e}")
+        except ConnectionRefusedError as e: 
+            print(f"Jobber API connection/authorization error: {e}. Worker will pause. Please check authorization status via web UI.")
+            # This indicates a token issue (e.g. invalid, expired and couldn't refresh).
+            # The worker should pause and wait for re-authorization.
+            return # Stop this poll cycle; it will be restarted by start_worker after a delay.
+        except RuntimeError as e: 
+            print(f"Runtime error processing order from {path_str} with Jobber: {e}")
+        except Exception as e:
+            print(f"An unexpected error occurred processing {path_str}: {e}")
+            # Consider logging traceback for unexpected errors:
+            # import traceback
+            # traceback.print_exc()
+    print(f"--- Poll cycle finished at {time.strftime('%Y-%m-%d %H:%M:%S')} ---")
 
 
-# ---------------------------------------------------------------------------
-# main guard
-# ---------------------------------------------------------------------------
-if __name__ == "__main__":
-    jc = JobberClient(token=os.getenv("JOBBER_TOKEN", "stub-token"))
-    print("Starting Saberis → Jobber worker (stub‑auth mode). Press Ctrl‑C to exit.")
+def start_worker():
+    """Initializes JobberClient and starts the polling loop."""
+    print("Initializing Jobber Client for worker...")
+    
+    jobber_service_client = JobberClient()
+
+    print("Starting Saberis -> Jobber worker. Press Ctrl-C to exit.")
     try:
         while True:
-            poll_once(jc)
+            # get_valid_access_token will attempt to load/refresh.
+            # If it returns None, auth is not established or refresh failed.
+            current_token = get_valid_access_token() 
+            if not current_token:
+                print("Jobber authorization lost or not established. Worker pausing.")
+                print(f"Please visit http://localhost:{os.environ.get('FLASK_PORT', 5000)}{url_for('authorize_jobber_route')} to authorize.")
+                # Wait longer before retrying if auth is lost/unavailable
+                time.sleep(POLL_SECONDS * 2) # e.g., 60 seconds
+                continue # Skip poll_once and re-check token in the next loop iteration
+
+            # Update the client's token in case it was refreshed.
+            # This ensures the JobberClient instance uses the latest token.
+            jobber_service_client.access_token = current_token
+            
+            poll_once(jobber_service_client)
+            print(f"Waiting {POLL_SECONDS} seconds for next poll cycle...")
             time.sleep(POLL_SECONDS)
     except KeyboardInterrupt:
-        print("Stopped.")
+        print("\nWorker stopped by user.")
+    except Exception as e:
+        print(f"Critical error in worker loop: {e}")
+        # import traceback
+        # traceback.print_exc()
+    finally:
+        print("Worker has shut down.")
+
+# ---------------------------------------------------------------------------
+# Main Guard
+# ---------------------------------------------------------------------------
+if __name__ == "__main__":
+    import sys
+    # Default port for Flask
+    flask_port = int(os.environ.get("FLASK_PORT", 5000))
+
+    if len(sys.argv) > 1 and sys.argv[1].lower() == "worker":
+        start_worker()
+    elif len(sys.argv) > 1 and sys.argv[1].lower() == "web":
+        if not os.environ.get("JOBBER_REDIRECT_URI"):
+            print(f"Warning: JOBBER_REDIRECT_URI is not set. The OAuth callback may fail.")
+            print(f"Defaulting to http://localhost:{flask_port}/jobber/callback for now. Please set it in your .env file.")
+            os.environ["JOBBER_REDIRECT_URI"] = f"http://localhost:{flask_port}/jobber/callback"
+
+        print(f"Starting Flask web server for Jobber OAuth handling on port {flask_port}.")
+        print(f"Open your browser to http://localhost:{flask_port}{url_for('home')} to authorize.")
+        app.run(debug=True, port=flask_port, use_reloader=False)
+    else:
+        print("Usage: python main.py [web|worker]")
+        print(" web    : Starts the Flask web server for OAuth authorization.")
+        print(" worker : Starts the polling worker (requires prior authorization via web).")
+        print("\nStarting web server by default...")
+        if not os.environ.get("JOBBER_REDIRECT_URI"):
+            print(f"Warning: JOBBER_REDIRECT_URI is not set. The OAuth callback may fail.")
+            print(f"Defaulting to http://localhost:{flask_port}/jobber/callback for now. Please set it in your .env file.")
+            os.environ["JOBBER_REDIRECT_URI"] = f"http://localhost:{flask_port}/jobber/callback"
+        app.run(debug=True, port=flask_port, use_reloader=False)
