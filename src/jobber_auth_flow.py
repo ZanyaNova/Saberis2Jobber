@@ -13,7 +13,7 @@ from jobber_config import (
     JOBBER_CLIENT_ID, JOBBER_CLIENT_SECRET, JOBBER_REDIRECT_URI,
     JOBBER_AUTHORIZATION_URL, JOBBER_TOKEN_URL, JOBBER_SCOPES
 )
-from token_storage import save_tokens, load_tokens, clear_tokens
+from token_storage import save_tokens, load_tokens, clear_tokens, TokenData
 
 _oauth_state_store: Optional[str] = None
 
@@ -78,7 +78,6 @@ def exchange_code_for_token(code: str) -> bool:
             print(f"Response: {token_data}")
             return False
 
-        # Calculate the absolute expiry timestamp in seconds
         expires_at = (time.time() + int(expires_in)) if expires_in else None
         
         save_tokens(access_token, refresh_token, expires_at)
@@ -101,14 +100,15 @@ def refresh_access_token() -> Optional[str]:
     Saves the new tokens.
     Returns the new access token if successful, None otherwise.
     """
-    stored_tokens = load_tokens()
-    if not stored_tokens or not stored_tokens.get("refresh_token"):
+    stored_tokens_data: Optional[TokenData] = load_tokens()
+
+    if not stored_tokens_data or not stored_tokens_data.refresh_token: 
         print("No refresh token available. Please re-authorize.")
         return None
 
     refresh_payload: Dict[str, str] = {
         "grant_type": "refresh_token",
-        "refresh_token": stored_tokens["refresh_token"],
+        "refresh_token": stored_tokens_data.refresh_token,
         "client_id": JOBBER_CLIENT_ID,
         "client_secret": JOBBER_CLIENT_SECRET,
         # According to Jobber docs (May 2025), scope is not typically sent on refresh.
@@ -122,7 +122,7 @@ def refresh_access_token() -> Optional[str]:
         new_access_token = new_token_data.get("access_token")
         # A new refresh token might be issued (if Refresh Token Rotation is ON).
         # If not provided in response, assume the old one is still valid.
-        new_refresh_token = new_token_data.get("refresh_token", stored_tokens.get("refresh_token"))
+        new_refresh_token = new_token_data.get("refresh_token", stored_tokens_data.refresh_token)
         new_expires_in = new_token_data.get("expires_in")
         
         if not new_access_token:
@@ -138,6 +138,7 @@ def refresh_access_token() -> Optional[str]:
         save_tokens(new_access_token, new_refresh_token, new_expires_at)
         print("Access token refreshed successfully.")
         return new_access_token
+    
     except requests.exceptions.RequestException as e:
         error_message = str(e)
         if e.response is not None:
@@ -160,13 +161,14 @@ def get_valid_access_token() -> Optional[str]:
     If the token is expired or nearing expiry, it attempts to refresh it.
     If no token or refresh fails, returns None.
     """
-    tokens = load_tokens()
-    if not tokens or not tokens.get("access_token"):
+    tokens_data: Optional[TokenData] = load_tokens()
+    if not tokens_data or not tokens_data.access_token: # Access via attribute
         print("No tokens found. Please authorize the application first.")
         return None
+    
     buffer_seconds = 300 
-    if tokens.get("expires_at") and tokens["expires_at"] < (time.time() + buffer_seconds):
+    if tokens_data.expires_at and tokens_data.expires_at < (time.time() + buffer_seconds):
         print("Access token expired or nearing expiry. Attempting refresh.")
         return refresh_access_token()
     
-    return tokens["access_token"]
+    return tokens_data.access_token
