@@ -8,12 +8,8 @@ from jobber_config import TOKEN_FILE_PATH
 _token_cache: Optional[Dict[str, Any]] = None
 
 def save_tokens(access_token: str, refresh_token: Optional[str], expires_at: Optional[float]) -> None:
-    """
-    Saves tokens to the storage.
-    WARNING: Not production-safe.
-    """
     global _token_cache
-    tokens = {
+    tokens: Dict[str, str | None | float] = {
         "access_token": access_token,
         "refresh_token": refresh_token,
         "expires_at": expires_at,
@@ -31,10 +27,6 @@ def save_tokens(access_token: str, refresh_token: Optional[str], expires_at: Opt
 
 
 def load_tokens() -> Optional[Dict[str, Any]]:
-    """
-    Loads tokens from storage.
-    WARNING: Not production-safe.
-    """
     global _token_cache
     if _token_cache:
         return _token_cache
