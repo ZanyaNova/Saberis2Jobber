@@ -39,10 +39,6 @@ def save_tokens(access_token: str, refresh_token: Optional[str], expires_at: Opt
 
 
 def load_tokens() -> Optional[TokenData]:
-    """
-    Loads tokens from storage.
-    WARNING: Not production-safe regarding concurrency.
-    """
     global _token_cache
 
     if _token_cache:

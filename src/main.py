@@ -2,14 +2,12 @@ import time
 import os
 import json 
 import pathlib 
-import glob 
 
-from flask import Flask, request, redirect, jsonify, url_for, session 
+from flask import Flask, request, redirect, url_for 
 
 # Auth and Config
 from jobber_config import load_dotenv 
 from jobber_auth_flow import get_authorization_url, exchange_code_for_token, get_valid_access_token, verify_state_parameter
-from token_storage import load_tokens 
 
 # Jobber Business Logic
 from jobber_models import SaberisOrder, saberis_to_jobber 
@@ -28,9 +26,6 @@ app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(24))
 # ---------------------------------------------------------------------------
 @app.route('/')
 def home():
-    """Home page with options to authorize or see status."""
-    tokens = load_tokens()
-    # get_valid_access_token will attempt refresh if needed
     status_message = "Checking authorization status..."
     try:
         is_authorized = get_valid_access_token() is not None

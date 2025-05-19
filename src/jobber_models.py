@@ -1,19 +1,75 @@
+# jobber_models.py (Revised)
 """
 Data models for Saberis and Jobber, and transformation logic.
 """
-from __future__ import annotations
+from __future__ import annotations  # Allows forward references for type hints
+
 import hashlib
 import json
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from datetime import datetime
-from typing import Any, List, Optional
+from typing import List, TypedDict, Optional, Any, Union
 
 # ---------------------------------------------------------------------------
-# Saberis Models
+# Type Definitions for Saberis Input Structures (Raw JSON Parsing)
 # ---------------------------------------------------------------------------
+
+class SaberisShippingDict(TypedDict, total=False):
+    """Structure expected within Saberis 'Shipping' field."""
+    address: str
+    city: str
+    state: str
+    postalCode: str
+    country: str
+
+class SaberisCustomerDict(TypedDict, total=False):
+    """Structure expected within Saberis 'Customer' field."""
+    Name: str
+
+class SaberisHeaderDict(TypedDict, total=False):
+    """Structure expected within Saberis 'Header' field."""
+    Username: str
+    Date: str
+    Customer: SaberisCustomerDict # This is correctly typed
+    Shipping: SaberisShippingDict # Using the specific TypedDict if applicable, or Dict[str, Any] if truly varied
+
+class SaberisLineItemDict(TypedDict, total=False):
+    """Structure expected within a Saberis 'Line' object."""
+    Type: str
+    type: str
+    Text: str
+    Description: str
+    Quantity: Union[str, float, int]
+    List: Union[str, float, int]
+    Selling: Union[str, float, int]
+    Cost: Union[str, float, int]
+
+class SaberisGroupDict(TypedDict, total=False):
+    """Structure expected within a Saberis 'Group' object."""
+    Line: List[SaberisLineItemDict] # This is correctly typed
+
+class SaberisDocumentDict(TypedDict, total=False):
+    """Overall Saberis document structure."""
+    Header: SaberisHeaderDict
+    Group: List[SaberisGroupDict]
+
+# ---------------------------------------------------------------------------
+# Saberis Application Models
+# ---------------------------------------------------------------------------
+
+# Reverting to TypedDict for ShippingAddress as it was simple and likely original intent
+class ShippingAddress(TypedDict):
+    """Shipping address as stored and used by SaberisOrder."""
+    address: str
+    city: str
+    state: str
+    postalCode: str
+    country: str
+
 @dataclass
-class SaberisLineItem:
-    type: str  
+class SaberisLineItem: # Reverted name
+    """Represents a line item in a Saberis order."""
+    type: str
     description: str
     quantity: float = 1.0
     list_price: float = 0.0
@@ -21,76 +77,123 @@ class SaberisLineItem:
     cost: float = 0.0
 
     @staticmethod
-    def from_json(obj: dict[str, Any]) -> SaberisLineItem:
-        item_type = obj.get("Type") or obj.get("type")
-        if item_type == "Text":
-            return SaberisLineItem(type="Text", description=obj.get("Text", ""))
-        # Assume "Product"
+    def from_json(obj: SaberisLineItemDict) -> SaberisLineItem: # Corrected signature for Pylance Error 4
+        """Create a SaberisLineItem from a SaberisLineItemDict."""
+        item_type_raw = obj.get("Type") or obj.get("type")
+        item_type = str(item_type_raw or "")
+
+        if item_type.lower() == "text":
+            description = str(obj.get("Text") or "")
+            return SaberisLineItem(type="Text", description=description)
+
+        description_prod = str(obj.get("Description") or "Unnamed Product")
+
+        def safe_float(value: Any) -> float:
+            if value is None or value == "": return 0.0
+            try: return float(value)
+            except (ValueError, TypeError): return 0.0
+
+        quantity_prod = safe_float(obj.get("Quantity", 1))
+        list_price_prod = safe_float(obj.get("List", 0))
+        selling_price_prod = safe_float(obj.get("Selling", 0))
+        cost_prod = safe_float(obj.get("Cost", 0))
+
         return SaberisLineItem(
-            type="Product",
-            description=obj.get("Description", "Unnamed Product"),
-            quantity=float(obj.get("Quantity", 1)),
-            list_price=float(obj.get("List", 0)),
-            selling_price=float(obj.get("Selling", 0)),
-            cost=float(obj.get("Cost", 0)),
+            type="Product", description=description_prod, quantity=quantity_prod,
+            list_price=list_price_prod, selling_price=selling_price_prod, cost=cost_prod,
         )
 
 @dataclass
-class SaberisOrder:
+class SaberisOrder: # Reverted name
+    """Represents a complete Saberis order."""
     username: str
     created_at: datetime
     customer_name: str
-    shipping_address: dict[str, str]
-    lines: List[SaberisLineItem]
+    shipping_address: ShippingAddress # Using the TypedDict version
+    lines: List[SaberisLineItem] = field(default_factory=list) # Pylance Error 1 should be resolved
 
-    @staticmethod
-    def from_json(doc: dict[str, Any]) -> SaberisOrder:
+    @classmethod
+    def from_json(cls, doc: SaberisDocumentDict) -> SaberisOrder: 
+        """Create a SaberisOrder from a SaberisDocumentDict."""
         header = doc.get("Header", {})
-        shipping = header.get("Shipping", {}) or {}
-        ship_addr = {k: shipping.get(k, "") for k in ("address", "city", "state", "postalCode", "country")}
-        lines: List[SaberisLineItem] = []
-        for group in doc.get("Group", []):
-            for raw in group.get("Line", []):
-                lines.append(SaberisLineItem.from_json(raw))
-        return SaberisOrder(
-            username=header.get("Username", "unknown"),
-            created_at=datetime.strptime(header.get("Date", "1970-01-01"), "%Y-%m-%d"),
-            customer_name=header.get("Customer", {}).get("Name", "Unnamed Client"),
-            shipping_address=ship_addr,
-            lines=lines,
+        username = str(header.get("Username") or "unknown")
+        date_str = str(header.get("Date") or "1970-01-01")
+        try: created_at = datetime.strptime(date_str, "%Y-%m-%d")
+        except (ValueError, TypeError):
+            print(f"Warning: Could not parse date '{date_str}'. Using 1970-01-01.")
+            created_at = datetime(1970, 1, 1)
+
+        # Pylance Error 2: Unnecessary cast. SaberisHeaderDict types Customer as SaberisCustomerDict.
+        # header.get("Customer", {}) will return SaberisCustomerDict or {}.
+        # Both are compatible if SaberisCustomerDict is total=False.
+        customer_info = header.get("Customer", {})
+        customer_name = str(customer_info.get("Name") or "Unnamed Client")
+
+        shipping_raw = header.get("Shipping", {})
+        ship_addr: ShippingAddress = { # Constructing the TypedDict directly
+            "address": str(shipping_raw.get("address") or ""),
+            "city": str(shipping_raw.get("city") or ""),
+            "state": str(shipping_raw.get("state") or ""),
+            "postalCode": str(shipping_raw.get("postalCode") or ""),
+            "country": str(shipping_raw.get("country") or ""),
+        }
+
+        processed_lines: List[SaberisLineItem] = []
+        groups = doc.get("Group", []) # Default to empty list if "Group" is not present
+        for group in groups:
+            # Pylance Error 3: Unnecessary cast. SaberisGroupDict types Line as List[SaberisLineItemDict].
+            # group.get("Line", []) will return List[SaberisLineItemDict] or [].
+            raw_lines_in_group = group.get("Line", [])
+            for raw_item_dict in raw_lines_in_group: # raw_item_dict is SaberisLineItemDict
+                processed_lines.append(SaberisLineItem.from_json(raw_item_dict)) # Error 4 addressed by signature change
+
+        return cls(
+            username=username, created_at=created_at, customer_name=customer_name,
+            shipping_address=ship_addr, lines=processed_lines,
         )
 
     def first_catalog_code(self) -> str:
         for li in self.lines:
             if li.type == "Text" and li.description.startswith("Catalog="):
-                return li.description.split("=", 1)[1]
+                parts = li.description.split("=", 1)
+                if len(parts) > 1: return parts[1].strip()
         return "NA"
 
     def unique_key(self) -> str:
-        payload = json.dumps([asdict(li) for li in self.lines], sort_keys=True).encode()
-        md5_part = hashlib.md5(payload).hexdigest()[:4]
-        return f"{self.username}_{self.created_at:%Y%m%d}_{self.first_catalog_code()}_{md5_part}"
+        payload_dict = [asdict(li) for li in self.lines] # asdict works on dataclasses
+        payload_str = json.dumps(payload_dict, sort_keys=True)
+        payload_bytes = payload_str.encode('utf-8')
+        md5_part = hashlib.md5(payload_bytes).hexdigest()[:4]
+        date_str = self.created_at.strftime("%Y%m%d")
+        catalog_code = self.first_catalog_code()
+        return f"{self.username}_{date_str}_{catalog_code}_{md5_part}"
 
 # ---------------------------------------------------------------------------
-# Jobber Transformation Models & Logic
+# Jobber Application Models (Dataclasses) - For Transformation Output
 # ---------------------------------------------------------------------------
 @dataclass
-class QuoteLineInput:
+class QuoteLineInput: # Reverted name
+    """Represents a line item in a Jobber quote, application-level model."""
     name: str
     quantity: float
     unit_price: float
-    unit_cost: Optional[float] = None 
+    unit_cost: Optional[float] = None
     taxable: bool = False
 
 @dataclass
-class QuoteCreateInput:
+class QuoteCreateInput: # Reverted name
+    """Input for creating a Jobber quote, application-level model."""
     client_id: str
     property_id: str
     title: str
     message: str
-    line_items: List[QuoteLineInput]
+    line_items: List[QuoteLineInput] = field(default_factory=list)
 
-def saberis_to_jobber(order: SaberisOrder, client_id: str, property_id: str) -> QuoteCreateInput:
+# ---------------------------------------------------------------------------
+# Transformation Logic
+# ---------------------------------------------------------------------------
+def saberis_to_jobber(order: SaberisOrder, client_id: str, property_id: str) -> QuoteCreateInput: 
+    """Transforms a SaberisOrder into a Jobber QuoteCreateInput."""
     title = order.first_catalog_code()
     message_lines: List[str] = []
     for li in order.lines:
@@ -100,24 +203,18 @@ def saberis_to_jobber(order: SaberisOrder, client_id: str, property_id: str) -> 
 
     jobber_lines: List[QuoteLineInput] = []
     for li in order.lines:
-        if li.type != "Product":
-            continue
+        if li.type != "Product": continue
+        unit_cost = li.cost if li.cost > 0 else None
         jobber_lines.append(
             QuoteLineInput(
-                name=li.description,
-                quantity=li.quantity,
-                unit_price=li.selling_price,
-                unit_cost=li.cost if li.cost else None, 
-                taxable=False,
+                name=li.description, quantity=li.quantity, unit_price=li.selling_price,
+                unit_cost=unit_cost, taxable=False,
             )
         )
     if not jobber_lines:
-        jobber_lines.append(QuoteLineInput(name="Misc. Items", quantity=1, unit_price=0))
+        jobber_lines.append(QuoteLineInput(name="Misc. Items", quantity=1.0, unit_price=0.0))
 
     return QuoteCreateInput(
-        client_id=client_id,
-        property_id=property_id,
-        title=title,
-        message=message,
-        line_items=jobber_lines,
+        client_id=client_id, property_id=property_id, title=title,
+        message=message, line_items=jobber_lines,
     )
