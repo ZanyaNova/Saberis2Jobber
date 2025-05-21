@@ -11,7 +11,7 @@ from typing import Dict
 
 from jobber_config import (
     JOBBER_CLIENT_ID, JOBBER_CLIENT_SECRET, JOBBER_REDIRECT_URI,
-    JOBBER_AUTHORIZATION_URL, JOBBER_TOKEN_URL, JOBBER_SCOPES
+    JOBBER_AUTHORIZATION_URL, JOBBER_TOKEN_URL
 )
 from token_storage import save_tokens, load_tokens, clear_tokens, TokenData
 
@@ -32,7 +32,6 @@ def get_authorization_url() -> str:
         "client_id": JOBBER_CLIENT_ID,
         "redirect_uri": JOBBER_REDIRECT_URI,
         "response_type": "code",
-        "scope": JOBBER_SCOPES,
         "state": _oauth_state_store
     }
     return f"{JOBBER_AUTHORIZATION_URL}?{urllib.parse.urlencode(params)}"
@@ -112,7 +111,6 @@ def refresh_access_token() -> Optional[str]:
         "client_id": JOBBER_CLIENT_ID,
         "client_secret": JOBBER_CLIENT_SECRET,
         # According to Jobber docs (May 2025), scope is not typically sent on refresh.
-        # "scope": JOBBER_SCOPES 
     }
     try:
         response = requests.post(JOBBER_TOKEN_URL, data=refresh_payload, timeout=30)

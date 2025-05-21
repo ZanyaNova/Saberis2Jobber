@@ -20,14 +20,6 @@ except KeyError as e:
         "Please set it in your environment or .env file."
     ) from e
 
-JOBBER_SCOPES: str = os.getenv("JOBBER_SCOPES", "clients.read,clients.write,quotes.write")
-
-if not JOBBER_SCOPES:
-     raise ValueError(
-        "JOBBER_SCOPES environment variable is set but is empty. "
-        "Please provide a valid scope string."
-     )
-
 JOBBER_AUTHORIZATION_URL: Final[str] = "https://api.getjobber.com/api/oauth/authorize"
 JOBBER_TOKEN_URL: Final[str] = "https://api.getjobber.com/api/oauth/token"
 JOBBER_GRAPHQL_URL: Final[str] = "https://api.getjobber.com/api/graphql"

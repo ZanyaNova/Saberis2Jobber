@@ -30,15 +30,45 @@ class GraphQLResponseWrapper(TypedDict):
 class UserError(TypedDict): message: str; path: List[Union[str, int]] # Jobber's userError structure
 
 # --- Client Creation GQL TypedDicts ---
-class ClientEmailInputGQL(TypedDict, total=False): address: str; primary: Optional[bool]
-class ClientPhoneInputGQL(TypedDict, total=False): number: str; primary: Optional[bool]; type: Optional[str] # e.g. "work", "mobile"
+class ClientEmailInputGQL(TypedDict, total=False):
+    address: str # Assuming 'address' corresponds to the email string
+    primary: Optional[bool]
+    # label: Optional[str] # If EmailCreateAttributes has a label
+
+class ClientPhoneInputGQL(TypedDict, total=False):
+    number: str # Assuming 'number' corresponds to the phone string
+    primary: Optional[bool]
+    type: Optional[str] # e.g., "work", "mobile", from a PhoneType enum
+    # label: Optional[str] # If PhoneNumberCreateAttributes has a label
+
 class ClientMutationInputGQL(TypedDict, total=False):
-    name: str; firstName: Optional[str]; lastName: Optional[str]
-    emails: Optional[List[ClientEmailInputGQL]]; phones: Optional[List[ClientPhoneInputGQL]]
-class ClientCreateVariablesGQL(TypedDict): input: ClientMutationInputGQL
+    """
+    Represents the input for creating a client in Jobber, aligning with ClientCreateInput.
+    Fields are based on the provided Jobber API documentation.
+    """
+    # Naming and Identification
+    title: Optional[str]       # e.g., "Mr.", "Ms." Corresponds to ClientTitle.
+    firstName: Optional[str]
+    lastName: Optional[str]    # Documentation implies this is not strictly required (String, not String!)
+    companyName: Optional[str]
+    isCompany: Optional[bool]  # True if companyName should be the primary name.
+
+    # Communication Preferences
+    receivesReminders: Optional[bool]
+    receivesFollowUps: Optional[bool]
+    receivesQuoteFollowUps: Optional[bool]
+    receivesInvoiceFollowUps: Optional[bool]
+    receivesReviewRequests: Optional[bool]
+
+    # Contact Information
+    phones: Optional[List[ClientPhoneInputGQL]] 
+    emails: Optional[List[ClientEmailInputGQL]] 
+
+class ClientCreateVariablesGQL(TypedDict): 
+    input: ClientMutationInputGQL
 class ClientObjectGQL(TypedDict): id: str; name: str # Structure of 'client' object in response
 class ClientCreateDataPayloadGQL(TypedDict): client: Optional[ClientObjectGQL]; userErrors: Optional[List[UserError]] # Structure of 'clientCreate' in response data
-# ClientCreateResponseDataGQL (Optional - if you want to type the whole 'data' field for this specific mutation)
+# ClientCreateResponseDataGQL (Optional - for typing the whole 'data' field for this specific mutation)
 # class ClientCreateResponseDataGQL(TypedDict): clientCreate: Optional[ClientCreateDataPayloadGQL]
 
 
@@ -206,50 +236,91 @@ class JobberClient:
 
     def create_client_and_property(self, order: SaberisOrder) -> Tuple[str, str]:
         """Creates a client and then a property for that client in Jobber."""
-        client_name = order.customer_name
-        print(f"INFO: Attempting to create Jobber client for: '{client_name}'")
+        client_name_str = order.customer_name.strip() # Get customer name from SaberisOrder
+        print(f"INFO: Attempting to create Jobber client for: '{client_name_str}'")
 
         client_create_mutation = """
         mutation ClientCreate($input: ClientCreateInput!) {
-          clientCreate(input: $input) { client { id name } userErrors { message path } }
+          clientCreate(input: $input) {
+            client { id name } # 'name' in response is composed by Jobber
+            userErrors { message path }
+          }
         }"""
-        client_mutation_input_gql: ClientMutationInputGQL = {"name": client_name}
-        # TODO: Consider adding emails/phones from order if available
-        # e.g., if order.contact_email: client_mutation_input_gql["emails"] = [{"address": order.contact_email, "primary": True}]
-        
+
+        client_mutation_input_gql: ClientMutationInputGQL = {}
+
+        # Heuristic to determine if the name is a company or an individual
+        # This can be customized based on common patterns in your Saberis data
+        company_keywords = [" INC", " LLC", " CORP", " LTD", "COMPANY", "GROUP", "SERVICE", "SOLUTION"] # Add common suffixes/keywords
+        # Check if any part of the name (uppercase) contains these keywords.
+        # A more sophisticated check might look at word endings or specific structures.
+        is_likely_company = any(keyword in client_name_str.upper() for keyword in company_keywords)
+
+        if is_likely_company:
+            client_mutation_input_gql["companyName"] = client_name_str
+            client_mutation_input_gql["isCompany"] = True
+            # Optional: Jobber might still prefer a lastName for a primary contact at the company.
+            # If API errors about missing lastName, you could set a default:
+            # client_mutation_input_gql["lastName"] = "Contact"
+        else:
+            name_parts = client_name_str.split(None) # Split by any whitespace
+            if len(name_parts) >= 2: # e.g., "John Doe" or "Mary Anne Smith"
+                client_mutation_input_gql["firstName"] = name_parts[0]
+                client_mutation_input_gql["lastName"] = " ".join(name_parts[1:])
+            elif len(name_parts) == 1 and name_parts[0]: # e.g., "Cher" or a single-word company name missed by keywords
+                # If it's a single word and not flagged as a company, assume it's a person's last name.
+                client_mutation_input_gql["lastName"] = name_parts[0]
+            else:
+                # Fallback if client_name_str is empty after stripping.
+                # This should ideally be caught by validation earlier.
+                print(f"Warning: Client name '{order.customer_name}' is empty or invalid. Using fallback.")
+                client_mutation_input_gql["lastName"] = "Unknown" # Jobber usually appreciates a lastName
+                client_mutation_input_gql["firstName"] = "Client" # Placeholder
+            client_mutation_input_gql["isCompany"] = False
+
+
+        # Example: Set default communication preferences (optional)
+        # client_mutation_input_gql["receivesQuoteFollowUps"] = True
+
+        # TODO: Map SaberisOrder's email/phone to ClientEmailInputGQL/ClientPhoneInputGQL if available
+        # For example:
+        # if hasattr(order, 'contact_email') and order.contact_email: # Assuming SaberisOrder might have these
+        #     client_mutation_input_gql["emails"] = [{"address": order.contact_email, "primary": True}]
+        # if hasattr(order, 'contact_phone') and order.contact_phone:
+        #     client_mutation_input_gql["phones"] = [{"number": order.contact_phone, "primary": True, "type": "mobile"}]
+
         client_variables: ClientCreateVariablesGQL = {"input": client_mutation_input_gql}
         client_id: str
         try:
-            # _post returns Dict[str, Any] which is GraphQLData
             raw_client_response_data: GraphQLData = self._post(client_create_mutation, client_variables)
             
             client_create_payload_dict = raw_client_response_data.get("clientCreate")
             if not isinstance(client_create_payload_dict, dict):
-                print(f"ERROR: Unexpected response structure for clientCreate for '{client_name}'. Expected dict, got {type(client_create_payload_dict)}. Response: {raw_client_response_data}")
+                print(f"ERROR: Unexpected response structure for clientCreate for '{client_name_str}'. Expected dict, got {type(client_create_payload_dict)}. Response: {raw_client_response_data}")
                 raise RuntimeError(f"Unexpected response structure for clientCreate: {raw_client_response_data}")
-            # Cast to the specific TypedDict for 'clientCreate' payload
+            
             client_create_data: ClientCreateDataPayloadGQL = cast(ClientCreateDataPayloadGQL, client_create_payload_dict)
             
             user_errors = client_create_data.get("userErrors")
             if user_errors:
                 error_messages = [f"Path: {e.get('path', 'N/A')}, Message: {e.get('message', 'Unknown error')}" for e in user_errors]
-                print(f"ERROR: Jobber userErrors creating client '{client_name}': {'; '.join(error_messages)}")
-                raise RuntimeError(f"Error creating Jobber client '{client_name}': {'; '.join(error_messages)}")
+                print(f"ERROR: Jobber userErrors creating client '{client_name_str}': {'; '.join(error_messages)}")
+                raise RuntimeError(f"Error creating Jobber client '{client_name_str}': {'; '.join(error_messages)}")
 
             client_object = client_create_data.get("client")
             if not client_object or not client_object.get("id"):
-                print(f"ERROR: Client creation response missing client ID or client object for '{client_name}'. Response: {client_create_data}")
-                raise RuntimeError(f"Client creation response missing client ID or client object for '{client_name}': {client_create_data}")
+                print(f"ERROR: Client creation response missing client ID or client object for '{client_name_str}'. Response: {client_create_data}")
+                raise RuntimeError(f"Client creation response missing client ID or client object for '{client_name_str}': {client_create_data}")
 
-            client_id = client_object["id"] # id is required in ClientObjectGQL
-            print(f"SUCCESS: Created Jobber client '{client_object.get('name', client_name)}' with ID: {client_id}")
+            client_id = client_object["id"]
+            created_client_jobber_name = client_object.get('name', client_name_str) # 'name' here is from Jobber's response
+            print(f"SUCCESS: Created Jobber client '{created_client_jobber_name}' with ID: {client_id}")
 
         except (ConnectionRefusedError, requests.exceptions.RequestException, RuntimeError) as e:
-            # Catch specific errors from _post or this method's logic
-            print(f"ERROR: Failed to create Jobber client for '{client_name}': {e}")
+            print(f"ERROR: Failed to create Jobber client for '{client_name_str}': {e}")
             raise
-        except Exception as e: # Catch any other unexpected errors
-            print(f"ERROR: Unexpected error creating Jobber client for '{client_name}': {e}")
+        except Exception as e:
+            print(f"ERROR: Unexpected error creating Jobber client for '{client_name_str}': {e}")
             raise
 
         # --- Property Creation ---

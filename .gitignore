@@ -1,4 +1,6 @@
 venv/
 credential*.json
 .env
-example_doc/
+src/example_docs/
+__pycache__/
+jobber_tokens.json
