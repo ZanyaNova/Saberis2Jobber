@@ -76,10 +76,22 @@ class ClientCreateDataPayloadGQL(TypedDict): client: Optional[ClientObjectGQL]; 
 class PropertyAddressInputGQL(TypedDict, total=False):
     street: Optional[str]; street2: Optional[str]; city: Optional[str]
     province: Optional[str]; postalCode: Optional[str]; country: Optional[str]
-class PropertyMutationInputGQL(TypedDict): clientId: str; address: PropertyAddressInputGQL
-class PropertyCreateVariablesGQL(TypedDict): input: PropertyMutationInputGQL
+
+# Represents PropertyAttributes from Jobber documentation
+class PropertyAttributesGQL(TypedDict, total=False):
+    address: PropertyAddressInputGQL # PropertyAddressInputGQL seems correctly defined already
+    name: Optional[str]
+    # Add other fields from PropertyAttributes if needed, like taxRateId, customFields
+
+# Represents PropertyCreateInput from Jobber documentation
+class ActualPropertyCreateInputGQL(TypedDict): properties: List[PropertyAttributesGQL] # Must be a list
+
+class PropertyCreateVariablesGQL(TypedDict):
+    clientId: str  # Direct argument to propertyCreate
+    input: ActualPropertyCreateInputGQL # The 'input' argument for propertyCreate
+
 class PropertyObjectGQL(TypedDict): id: str; address: Optional[PropertyAddressInputGQL] # Structure of 'property' object
-class PropertyCreateDataPayloadGQL(TypedDict): property: Optional[PropertyObjectGQL]; userErrors: Optional[List[UserError]] # Structure of 'propertyCreate' in response data
+class PropertyCreateDataPayloadGQL(TypedDict): properties: Optional[List[PropertyObjectGQL]]; userErrors: Optional[List[UserError]] # Structure of 'propertyCreate' in response data
 # PropertyCreateResponseDataGQL (Optional)
 # class PropertyCreateResponseDataGQL(TypedDict): propertyCreate: Optional[PropertyCreateDataPayloadGQL]
 
@@ -326,8 +338,14 @@ class JobberClient:
         # --- Property Creation ---
         print(f"INFO: Attempting to create Jobber property for client ID: {client_id}")
         property_create_mutation = """
-        mutation PropertyCreate($input: PropertyCreateInput!) {
-          propertyCreate(input: $input) { property { id address { street city province postalCode } } userErrors { message path } }
+        mutation PropertyCreate($clientId: EncodedId!, $input: PropertyCreateInput!) {
+        propertyCreate(clientId: $clientId, input: $input) {
+            properties { # <-- Changed from 'property' to 'properties'
+                id
+                address { street city province postalCode }
+            }
+            userErrors { message path }
+        }
         }"""
         saberis_addr: ShippingAddress = order.shipping_address
         # Filter None values from Saberis address to build PropertyAddressInputGQL
@@ -338,9 +356,15 @@ class JobberClient:
         }
         filtered_address_dict = {k: v for k, v in temp_property_address.items() if v is not None and v != ""}
         property_address_gql: PropertyAddressInputGQL = cast(PropertyAddressInputGQL, filtered_address_dict)
+        property_attributes_item: PropertyAttributesGQL = {"address": property_address_gql}
+        actual_input_for_mutation: ActualPropertyCreateInputGQL = {
+            "properties": [property_attributes_item] # This must be a list of property attributes
+        }
 
-        property_mutation_input_gql: PropertyMutationInputGQL = {"clientId": client_id, "address": property_address_gql}
-        property_variables: PropertyCreateVariablesGQL = {"input": property_mutation_input_gql}
+        property_variables: PropertyCreateVariablesGQL = {
+            "clientId": client_id,
+            "input": actual_input_for_mutation
+        }
         property_id: str
         try:
             raw_property_response_data: GraphQLData = self._post(property_create_mutation, property_variables)
@@ -351,18 +375,26 @@ class JobberClient:
                 raise RuntimeError(f"Unexpected response structure for propertyCreate: {raw_property_response_data}")
             property_create_data: PropertyCreateDataPayloadGQL = cast(PropertyCreateDataPayloadGQL, property_create_payload_dict)
             
-            user_errors = property_create_data.get("userErrors")
-            if user_errors:
+            user_errors = property_create_data.get("userErrors") # This is fine
+            if user_errors:                                      # This is fine
                 error_messages = [f"Path: {e.get('path', 'N/A')}, Message: {e.get('message', 'Unknown error')}" for e in user_errors]
                 print(f"ERROR: Jobber userErrors creating property for client ID '{client_id}': {'; '.join(error_messages)}")
                 raise RuntimeError(f"Error creating Jobber property for client ID '{client_id}': {'; '.join(error_messages)}")
 
-            property_object = property_create_data.get("property")
-            if not property_object or not property_object.get("id"):
-                print(f"ERROR: Property creation response missing property ID or property object for client ID '{client_id}'. Response: {property_create_data}")
-                raise RuntimeError(f"Property creation response missing property ID or property object for client ID '{client_id}': {property_create_data}")
-            
-            property_id = property_object["id"] # id is required in PropertyObjectGQL
+            # Corrected logic for extracting property from 'properties' list:
+            returned_properties_list = property_create_data.get("properties")
+
+            if not returned_properties_list or len(returned_properties_list) == 0:
+                print(f"ERROR: Property creation response missing 'properties' list or list is empty for client ID '{client_id}'. Response: {property_create_data}")
+                raise RuntimeError(f"Property creation response missing 'properties' list or list is empty for client ID '{client_id}'")
+
+            property_object = returned_properties_list[0] # Get the first property from the list
+
+            if not property_object or not property_object.get("id"): # property_object is now an item from the list
+                print(f"ERROR: Property object in list missing ID for client ID '{client_id}'. Response: {property_object}")
+                raise RuntimeError(f"Property object in list missing ID for client ID '{client_id}'")
+
+            property_id = property_object["id"]
             print(f"SUCCESS: Created Jobber property with ID: {property_id} for client ID: {client_id}")
         
         except (ConnectionRefusedError, requests.exceptions.RequestException, RuntimeError) as e:
