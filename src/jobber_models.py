@@ -110,7 +110,7 @@ class SaberisOrder: # Reverted name
     created_at: datetime
     customer_name: str
     shipping_address: ShippingAddress # Using the TypedDict version
-    lines: List[SaberisLineItem] = field(default_factory=list) # Pylance Error 1 should be resolved
+    lines: List[SaberisLineItem] = field(default_factory=list)
 
     @classmethod
     def from_json(cls, doc: SaberisDocumentDict) -> SaberisOrder: 

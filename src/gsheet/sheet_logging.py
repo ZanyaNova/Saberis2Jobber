@@ -1,39 +1,31 @@
-import gspread
-from dotenv import load_dotenv
-import os
+from gsheet_config import GSHEET_LOGSHEET, LOG_PRIORITY_THRESHOLD
 from datetime import datetime
+import gspread
 
-def add_sheet_log(priority: str, context: str, message: str):
-    load_dotenv()
+def add_sheet_log(priority: int, context: str, message: str):
+    """
+    Adds a log entry to the Google Sheet if the priority meets the threshold.
+    Also prints the log message to the console.
 
-    g_account = gspread.service_account()
-    client_workbook = g_account.open_by_url(os.environ.get('WORKBOOK_URL'))
-    sht_records = client_workbook.worksheet("Log")
-
-    logs = sht_records.col_values(1)
-    new_row_index = len(logs) + 1
-
-    timestamp_column_index = 1
-    severity_column_index = timestamp_column_index + 1
-    context_column_index = severity_column_index + 1
-    message_column_index = context_column_index + 1
-
-    priority_threshold = int(os.environ.get('LOG_PRIORITY_THRESHOLD'))
-
-    if priority_threshold >= priority:
-    # Get current time in Google Sheets epoch time (seconds since 1899-12-30)
-        current_time = (datetime.now() - datetime(1899, 12, 30)).total_seconds() / 86400
-        
-        sht_records.update_cell(new_row_index, timestamp_column_index, current_time)
-        sht_records.update_cell(new_row_index, severity_column_index, priority)
-        sht_records.update_cell(new_row_index, context_column_index, context)
-        sht_records.update_cell(new_row_index, message_column_index, message)
+    Args:
+        priority (int): The priority of the log message (0-5, lower is more critical).
+        context (str): The context of the log message (e.g., function name, module).
+        message (str): The log message content.
+    """
 
     print(f"[{priority}] {context}: {message}")
 
+    if LOG_PRIORITY_THRESHOLD >= priority:
+        try:
+            timestamp_val = datetime.now().isoformat()
+            row_to_append = [timestamp_val, priority, context, message] #type: ignore
 
-
-
-
-
+            GSHEET_LOGSHEET.append_row(
+                row_to_append, #type: ignore
+                value_input_option='USER_ENTERED' #type: ignore
+            ) 
+        except gspread.exceptions.APIError as e:
+            print(f"!!! APIError writing to Google Sheet: {e}")
+        except Exception as e:
+            print(f"!!! Unexpected error writing to Google Sheet: {e}")
 
