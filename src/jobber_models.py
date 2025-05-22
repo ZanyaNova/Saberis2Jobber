@@ -58,6 +58,11 @@ class SaberisDocumentDict(TypedDict, total=False):
     Header: SaberisHeaderDict
     Group: List[SaberisGroupDict]
 
+CANADIAN_PROVINCE_TERRITORY_CODES = {
+    "AB", "BC", "MB", "NB", "NL", "NS", "NT", "NU",
+    "ON", "PE", "QC", "SK", "YT"
+}
+
 # ---------------------------------------------------------------------------
 # Saberis Application Models
 # ---------------------------------------------------------------------------
@@ -65,9 +70,10 @@ class SaberisDocumentDict(TypedDict, total=False):
 # Reverting to TypedDict for ShippingAddress as it was simple and likely original intent
 class ShippingAddress(TypedDict):
     """Shipping address as stored and used by SaberisOrder."""
-    address: str
+    street1: str
+    street2: Optional[str]
     city: str
-    state: str
+    province: str
     postalCode: str
     country: str
 
@@ -109,7 +115,7 @@ class SaberisLineItem: # Reverted name
         )
 
 @dataclass
-class SaberisOrder: # Reverted name
+class SaberisOrder:
     """Represents a complete Saberis order."""
     username: str
     created_at: datetime
@@ -122,14 +128,13 @@ class SaberisOrder: # Reverted name
         """Create a SaberisOrder from a SaberisDocumentDict."""
 
         saberis_order_document_node = doc.get("SaberisOrderDocument", {})
-        order_node = saberis_order_document_node.get("Order", {}) 
+        order_node = saberis_order_document_node.get("Order", {})
 
         username = str(order_node.get("Username") or "unknown")
         date_str = str(order_node.get("Date") or "1970-01-01")
         try:
             created_at = datetime.strptime(date_str, "%Y.%m.%d")
         except (ValueError, TypeError):
-            # Fallback if the above fails, or if you want to keep the old %Y-%m-%d
             try:
                 created_at = datetime.strptime(date_str, "%Y-%m-%d")
             except (ValueError, TypeError):
@@ -140,20 +145,28 @@ class SaberisOrder: # Reverted name
         customer_name = str(customer_info.get("Name") or "Unnamed Client")
 
         shipping_raw = order_node.get("Shipping", {})
+        
+        # Extract StateOrProvince and determine country
+        state_or_province_str = str(shipping_raw.get("StateOrProvince") or "").upper().strip()
+        
+        inferred_country = "US" # Default to USA
+        if state_or_province_str in CANADIAN_PROVINCE_TERRITORY_CODES:
+            inferred_country = "CA"
+
         ship_addr: ShippingAddress = {
-            "address": str(shipping_raw.get("Address") or ""), # From JSON "Address"
-            "city": str(shipping_raw.get("City") or ""),       # From JSON "City"
-            "state": str(shipping_raw.get("StateOrProvince") or ""), # From JSON "StateOrProvince"
-            "postalCode": str(shipping_raw.get("ZipOrPostal") or ""), # From JSON "ZipOrPostal"
-            "country": str(shipping_raw.get("country") or "USA"),
+            "street1": str(shipping_raw.get("Address") or ""),
+            "street2": "",
+            "city": str(shipping_raw.get("City") or ""),
+            "province": state_or_province_str, # Store the processed state/province code
+            "postalCode": str(shipping_raw.get("ZipOrPostal") or ""),
+            "country": inferred_country,
         }
 
-        processed_lines: List[SaberisLineItem] = [] # Initialize an empty list for SaberisLineItem objects
+        processed_lines: List[SaberisLineItem] = []
 
         groups_data_from_json: Any = order_node.get("Group")
 
         if isinstance(groups_data_from_json, dict):
-
             single_group_dict: SaberisSingleGroupWithItemsDict = cast(SaberisSingleGroupWithItemsDict, groups_data_from_json)
             raw_lines_list: List[SaberisLineItemDict] = single_group_dict.get("Item", [])
             
@@ -161,19 +174,15 @@ class SaberisOrder: # Reverted name
                 if raw_item_dict:
                     processed_lines.append(SaberisLineItem.from_json(raw_item_dict))
 
-        elif isinstance(groups_data_from_json, list): #TODO Determine if this is a redundant check, cus saberis may not actually do this.
-            # Case 2: "Group" is a list of group dictionaries.
-            # Each dictionary in this list is expected to be SaberisGroupDict compatible.
+        elif isinstance(groups_data_from_json, list):
             list_of_group_dicts: List[SaberisGroupDict] = cast(List[SaberisGroupDict], groups_data_from_json)
             
             for group_dict_item in list_of_group_dicts:
-                if group_dict_item: # Check if the group dictionary item is not None
-                    # Each SaberisGroupDict is expected to have its line items under a "Line" key.
+                if group_dict_item:
                     raw_lines_list: List[SaberisLineItemDict] = group_dict_item.get("Line", [])
                     
                     for raw_item_dict in raw_lines_list:
-                        # raw_item_dict is expected to be SaberisLineItemDict compatible
-                        if raw_item_dict: # Check if the item dictionary is not None or empty
+                        if raw_item_dict:
                             processed_lines.append(SaberisLineItem.from_json(raw_item_dict))
 
         return cls(

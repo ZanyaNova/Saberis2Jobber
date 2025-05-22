@@ -75,14 +75,17 @@ class ClientCreateDataPayloadGQL(TypedDict): client: Optional[ClientObjectGQL]; 
 
 # --- Property Creation GQL TypedDicts ---
 class PropertyAddressInputGQL(TypedDict, total=False):
-    street: Optional[str]; street2: Optional[str]; city: Optional[str]
-    province: Optional[str]; postalCode: Optional[str]; country: Optional[str]
+    street1: Optional[str]; 
+    street2: Optional[str]; 
+    city: Optional[str]
+    province: Optional[str]; 
+    postalCode: Optional[str]; 
+    country: Optional[str]
 
 # Represents PropertyAttributes from Jobber documentation
 class PropertyAttributesGQL(TypedDict, total=False):
-    address: PropertyAddressInputGQL # PropertyAddressInputGQL seems correctly defined already
+    address: PropertyAddressInputGQL
     name: Optional[str]
-    # Add other fields from PropertyAttributes if needed, like taxRateId, customFields
 
 # Represents PropertyCreateInput from Jobber documentation
 class ActualPropertyCreateInputGQL(TypedDict): properties: List[PropertyAttributesGQL] # Must be a list
@@ -351,7 +354,9 @@ class JobberClient:
         saberis_addr: ShippingAddress = order.shipping_address
         # Filter None values from Saberis address to build PropertyAddressInputGQL
         temp_property_address: Dict[str, Any] = {
-            "street": saberis_addr.get("address"), "city": saberis_addr.get("city"),
+            "street1": saberis_addr.get("S"), 
+            "street2": saberis_addr.get(""), 
+            "city": saberis_addr.get("city"),
             "province": saberis_addr.get("state"), "postalCode": saberis_addr.get("postalCode"),
             "country": saberis_addr.get("country")
         }
@@ -557,7 +562,7 @@ if __name__ == "__main__":
     
     # Sample data for testing
     sample_shipping_addr: ShippingAddress = {
-        "address": "31 Austin St", "city": "New Haven", "state": "CT",
+        "street1": "31 Austin St", "street2": "", "city": "New Haven", "province": "CT",
         "postalCode": "06515", "country": "USA"
     }
     sample_saberis_order = SaberisOrder(
