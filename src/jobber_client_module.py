@@ -5,11 +5,10 @@ Integrates with jobber_auth_flow to use valid access tokens.
 """
 import requests
 import re
-import json
 from typing import Any, Optional, Tuple, List, TypedDict, Union, Dict, cast
 
 from jobber_auth_flow import get_valid_access_token
-from jobber_models import SaberisOrder, QuoteCreateInput, SaberisLineItem, QuoteLineInput, ShippingAddress
+from jobber_models import SaberisOrder, QuoteCreateInput, ShippingAddress
 
 JOBBER_GRAPHQL_URL = "https://api.getjobber.com/api/graphql"
 
@@ -365,20 +364,13 @@ class JobberClient:
         saberis_addr: ShippingAddress = order.shipping_address
         # Filter None values from Saberis address to build PropertyAddressInputGQL
         temp_property_address: Dict[str, Any] = {
-            "street1": saberis_addr.get("S"), 
-            "street2": saberis_addr.get(""), 
+            "street1": saberis_addr.get("street1"), 
+            "street2": saberis_addr.get("street2"), 
             "city": saberis_addr.get("city"),
             "province": saberis_addr.get("province"), 
             "postalCode": saberis_addr.get("postalCode"),
             "country": saberis_addr.get("country")
         }
-
-        # --- DEBUG BEGIN: Added print statement for debugging ---
-        print("-" * 70)
-        print("DEBUG: temp_property_address before filtering:")
-        print(json.dumps(temp_property_address, indent=2))
-        print("-" * 70)
-        # --- END: Added print statement ---
 
         filtered_address_dict = {k: v for k, v in temp_property_address.items() if v is not None and v != ""}
         property_address_gql: PropertyAddressInputGQL = cast(PropertyAddressInputGQL, filtered_address_dict)
@@ -392,18 +384,8 @@ class JobberClient:
             "input": actual_input_for_mutation
         }
         property_id: str
-        try:
-             # --- DEBUG BEGIN: Added print statements for PropertyCreate API Playground ---
-            print("-" * 70)
-            print("GraphQL Mutation for PropertyCreate (for API Playground):")
-            print(property_create_mutation) # This is the mutation query string
-            print("-" * 70)
-            print("GraphQL Variables for PropertyCreate (for API Playground):")
-            # We use json.dumps for a nicely formatted, copyable JSON string
-            print(json.dumps(property_variables, indent=2))
-            print("-" * 70)
-            # --- DEBUG END: Added print statements ---
 
+        try:
             raw_property_response_data: GraphQLData = self._post(property_create_mutation, property_variables)
             
             property_create_payload_dict = raw_property_response_data.get("propertyCreate")
@@ -459,8 +441,7 @@ class JobberClient:
                 "unitPrice": li_model.unit_price,
                 "taxable": li_model.taxable,
                 "saveToProductsAndServices": False,
-                # Optional: map description (e.g., can also be li_model.name or kept empty)
-                "description": li_model.name # Or None, or a different field if available
+                "description": li_model.description
             }
             if li_model.unit_cost is not None:
                 item_gql["unitCost"] = li_model.unit_cost
@@ -538,67 +519,3 @@ class JobberClient:
             status_message = f"Unexpected error creating quote '{app_quote_payload.title}': {e}"
             print(f"ERROR: {status_message}")
             return None, status_message
-
-# Example Usage (Illustrative)
-if __name__ == "__main__":
-    from datetime import datetime # Required for SaberisOrder in example
-
-    # This example assumes jobber_auth_flow.py and token_storage.py are configured
-    # and that a valid token can be obtained (e.g., after running the web auth flow).
-    # For direct testing of this module without full auth, you might need to
-    # temporarily mock get_valid_access_token() or ensure TOKEN_FILE_PATH has a valid token.
-
-    print("INFO: Running jobber_client_module.py example usage...")
-    print("Ensure Jobber tokens are authorized and available for this test to fully succeed.")
-
-    client = JobberClient()
-    
-    # Sample data for testing
-    sample_shipping_addr: ShippingAddress = {
-        "street1": "31 Austin St", "street2": "", "city": "New Haven", "province": "CT",
-        "postalCode": "06515", "country": "USA"
-    }
-    sample_saberis_order = SaberisOrder(
-        username="testuser_client_module", created_at=datetime.now(), # Changed username for clarity
-        customer_name=f"Modular Test Client {datetime.now().strftime('%H%M%S')}", # Unique name for testing
-        shipping_address=sample_shipping_addr,
-        lines=[
-            SaberisLineItem(type="Product", description="Modular Foundation Work", quantity=1, selling_price=1500.00, list_price=1600.00, cost=1000.00),
-            SaberisLineItem(type="Product", description="Modular Framing Package", quantity=1, selling_price=3500.00, list_price=4000.00, cost=2500.00)
-        ]
-    )
-    
-    created_client_id: Optional[str] = None
-    created_property_id: Optional[str] = None
-    
-    try:
-        print("\n--- Testing Client and Property Creation ---")
-        created_client_id, created_property_id = client.create_client_and_property(sample_saberis_order)
-        print(f"INFO: Test Result - Created Client ID: {created_client_id}, Property ID: {created_property_id}")
-
-        if created_client_id and created_property_id:
-            sample_quote_app_payload = QuoteCreateInput(
-                client_id=created_client_id, 
-                property_id=created_property_id,
-                title=f"Modular Project Estimate {datetime.now().strftime('%y%m%d-%H%M')}", 
-                message="Estimate for the initial phase of the modular construction project.",
-                line_items=[
-                    QuoteLineInput(name="Site Preparation", quantity=1.0, unit_price=250.00, taxable=False),
-                    QuoteLineInput(name="Module Delivery", quantity=1.0, unit_price=500.00, taxable=False)
-                ]
-            )
-            try:
-                print("\n--- Testing Quote Creation ---")
-                final_quote_id, final_status_msg = client.create_quote(sample_quote_app_payload)
-                print(f"INFO: Test Result - Quote ID: {final_quote_id}, Final Status: {final_status_msg}")
-            except RuntimeError as e_quote: # Catch runtime specifically if needed
-                print(f"ERROR: Test - Runtime error creating quote: {e_quote}")
-            except Exception as e_quote_general: # General catch
-                print(f"ERROR: Test - General error creating quote: {e_quote_general}")
-                
-    except ConnectionRefusedError as e_auth:
-        print(f"ERROR: Test - Authentication error: {e_auth}. Please ensure the application is authorized with Jobber.")
-    except RuntimeError as e_runtime: # Catch runtime specifically from client/property creation
-        print(f"ERROR: Test - Runtime error during client/property creation: {e_runtime}")
-    except Exception as e_general: # General catch for client/property
-        print(f"ERROR: Test - General error during client/property creation: {e_general}")

@@ -83,7 +83,6 @@ class SaberisLineItem:
     description: str 
     quantity: float = 1.0
     list_price: float = 0.0
-    selling_price: float = 0.0 
     cost: float = 0.0         
 
     # New fields to capture more data
@@ -120,7 +119,6 @@ class SaberisLineItem:
         # START OF MODIFIED CODE BLOCK 2 - Parsing new fields in SaberisLineItem.from_json
         quantity_prod = safe_float(obj.get("Quantity", 1))
         list_price_prod = safe_float(obj.get("List", 0))
-        selling_price_prod = safe_float(obj.get("Selling", 0)) # This becomes Jobber unitPrice
         cost_prod = safe_float(obj.get("Cost", 0))             # This becomes Jobber unitCost
 
         product_code_val = str(obj.get("ProductCode") or "")
@@ -137,7 +135,6 @@ class SaberisLineItem:
             description=parsed_saberis_description, # Original Saberis description
             quantity=quantity_prod,
             list_price=list_price_prod,
-            selling_price=selling_price_prod,
             cost=cost_prod,
             product_code=product_code_val if product_code_val else None,
             sku=sku_val if sku_val else None,
@@ -327,18 +324,13 @@ def saberis_to_jobber(order: SaberisOrder, client_id: str, property_id: str) -> 
 
         # Construct the elaborate description string for Jobber
         desc_parts: List[str] = []
-        if li.description: # Original Saberis "Description" field
-            desc_parts.append(f"Orig. ID: {li.description}")
         if li.sku:
             desc_parts.append(f"SKU: {li.sku}")
-        # Using list_price from SaberisLineItem, not selling_price which is Jobber's unit_price
-        if li.list_price > 0: # Only add if there's a list price
-            desc_parts.append(f"List: ${li.list_price:.2f}")
         # Cost is already mapped to unit_cost, but can be included if desired for visibility
         # if li.cost > 0:
         #     desc_parts.append(f"Cost: ${li.cost:.2f}")
         if li.product_type_saberis:
-            desc_parts.append(f"Saberis Type: {li.product_type_saberis}")
+            desc_parts.append(f"Saberis ProductType: {li.product_type_saberis}")
         if li.uom:
             desc_parts.append(f"UOM: {li.uom}")
         if li.volume:
@@ -350,7 +342,7 @@ def saberis_to_jobber(order: SaberisOrder, client_id: str, property_id: str) -> 
         if li.manufacturer_sku:
             desc_parts.append(f"Manuf. SKU: {li.manufacturer_sku}")
         
-        jobber_item_description = " | ".join(desc_parts) if desc_parts else None
+        jobber_item_description = "  |  ".join(desc_parts) if desc_parts else None
 
         unit_cost_for_jobber = li.cost if li.cost > 0 else None # Saberis 'Cost' becomes Jobber 'unitCost'
         
@@ -358,11 +350,10 @@ def saberis_to_jobber(order: SaberisOrder, client_id: str, property_id: str) -> 
             QuoteLineInput(
                 name=jobber_item_name,
                 quantity=li.quantity,
-                unit_price=li.selling_price, # Saberis 'Selling' becomes Jobber 'unitPrice'
+                unit_price=li.cost,
                 description=jobber_item_description,
                 unit_cost=unit_cost_for_jobber,
-                taxable=False, # Defaulting taxable to False, adjust as needed
-                # save_to_products_and_services=False # Set this if you added it to QuoteLineInput
+                taxable=False, 
             )
         )
 
