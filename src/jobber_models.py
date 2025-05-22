@@ -8,7 +8,7 @@ import hashlib
 import json
 from dataclasses import dataclass, asdict, field
 from datetime import datetime
-from typing import List, TypedDict, Optional, Any, Union
+from typing import List, TypedDict, Optional, Any, Union, cast
 
 # ---------------------------------------------------------------------------
 # Type Definitions for Saberis Input Structures (Raw JSON Parsing)
@@ -47,6 +47,11 @@ class SaberisLineItemDict(TypedDict, total=False):
 class SaberisGroupDict(TypedDict, total=False):
     """Structure expected within a Saberis 'Group' object."""
     Line: List[SaberisLineItemDict] # This is correctly typed
+
+class SaberisSingleGroupWithItemsDict(TypedDict, total=False):
+    """Structure for a single 'Group' object directly containing an 'Item' list."""
+    GroupType: Optional[Any] # Or a more specific type for GroupType if known
+    Item: List[SaberisLineItemDict] 
 
 class SaberisDocumentDict(TypedDict, total=False):
     """Overall Saberis document structure."""
@@ -113,43 +118,70 @@ class SaberisOrder: # Reverted name
     lines: List[SaberisLineItem] = field(default_factory=list)
 
     @classmethod
-    def from_json(cls, doc: SaberisDocumentDict) -> SaberisOrder: 
+    def from_json(cls, doc: SaberisDocumentDict) -> SaberisOrder: # doc is the entire parsed JSON
         """Create a SaberisOrder from a SaberisDocumentDict."""
-        header = doc.get("Header", {})
-        username = str(header.get("Username") or "unknown")
-        date_str = str(header.get("Date") or "1970-01-01")
-        try: created_at = datetime.strptime(date_str, "%Y-%m-%d")
-        except (ValueError, TypeError):
-            print(f"Warning: Could not parse date '{date_str}'. Using 1970-01-01.")
-            created_at = datetime(1970, 1, 1)
 
-        # Pylance Error 2: Unnecessary cast. SaberisHeaderDict types Customer as SaberisCustomerDict.
-        # header.get("Customer", {}) will return SaberisCustomerDict or {}.
-        # Both are compatible if SaberisCustomerDict is total=False.
-        customer_info = header.get("Customer", {})
+        saberis_order_document_node = doc.get("SaberisOrderDocument", {})
+        order_node = saberis_order_document_node.get("Order", {}) 
+
+        username = str(order_node.get("Username") or "unknown")
+        date_str = str(order_node.get("Date") or "1970-01-01")
+        try:
+            created_at = datetime.strptime(date_str, "%Y.%m.%d")
+        except (ValueError, TypeError):
+            # Fallback if the above fails, or if you want to keep the old %Y-%m-%d
+            try:
+                created_at = datetime.strptime(date_str, "%Y-%m-%d")
+            except (ValueError, TypeError):
+                print(f"Warning: Could not parse date '{date_str}'. Using 1970-01-01.")
+                created_at = datetime(1970, 1, 1)
+
+        customer_info = order_node.get("Customer", {})
         customer_name = str(customer_info.get("Name") or "Unnamed Client")
 
-        shipping_raw = header.get("Shipping", {})
-        ship_addr: ShippingAddress = { # Constructing the TypedDict directly
-            "address": str(shipping_raw.get("address") or ""),
-            "city": str(shipping_raw.get("city") or ""),
-            "state": str(shipping_raw.get("state") or ""),
-            "postalCode": str(shipping_raw.get("postalCode") or ""),
-            "country": str(shipping_raw.get("country") or ""),
+        shipping_raw = order_node.get("Shipping", {})
+        ship_addr: ShippingAddress = {
+            "address": str(shipping_raw.get("Address") or ""), # From JSON "Address"
+            "city": str(shipping_raw.get("City") or ""),       # From JSON "City"
+            "state": str(shipping_raw.get("StateOrProvince") or ""), # From JSON "StateOrProvince"
+            "postalCode": str(shipping_raw.get("ZipOrPostal") or ""), # From JSON "ZipOrPostal"
+            "country": str(shipping_raw.get("country") or "USA"),
         }
 
-        processed_lines: List[SaberisLineItem] = []
-        groups = doc.get("Group", []) # Default to empty list if "Group" is not present
-        for group in groups:
-            # Pylance Error 3: Unnecessary cast. SaberisGroupDict types Line as List[SaberisLineItemDict].
-            # group.get("Line", []) will return List[SaberisLineItemDict] or [].
-            raw_lines_in_group = group.get("Line", [])
-            for raw_item_dict in raw_lines_in_group: # raw_item_dict is SaberisLineItemDict
-                processed_lines.append(SaberisLineItem.from_json(raw_item_dict)) # Error 4 addressed by signature change
+        processed_lines: List[SaberisLineItem] = [] # Initialize an empty list for SaberisLineItem objects
+
+        groups_data_from_json: Any = order_node.get("Group")
+
+        if isinstance(groups_data_from_json, dict):
+
+            single_group_dict: SaberisSingleGroupWithItemsDict = cast(SaberisSingleGroupWithItemsDict, groups_data_from_json)
+            raw_lines_list: List[SaberisLineItemDict] = single_group_dict.get("Item", [])
+            
+            for raw_item_dict in raw_lines_list:
+                if raw_item_dict:
+                    processed_lines.append(SaberisLineItem.from_json(raw_item_dict))
+
+        elif isinstance(groups_data_from_json, list): #TODO Determine if this is a redundant check, cus saberis may not actually do this.
+            # Case 2: "Group" is a list of group dictionaries.
+            # Each dictionary in this list is expected to be SaberisGroupDict compatible.
+            list_of_group_dicts: List[SaberisGroupDict] = cast(List[SaberisGroupDict], groups_data_from_json)
+            
+            for group_dict_item in list_of_group_dicts:
+                if group_dict_item: # Check if the group dictionary item is not None
+                    # Each SaberisGroupDict is expected to have its line items under a "Line" key.
+                    raw_lines_list: List[SaberisLineItemDict] = group_dict_item.get("Line", [])
+                    
+                    for raw_item_dict in raw_lines_list:
+                        # raw_item_dict is expected to be SaberisLineItemDict compatible
+                        if raw_item_dict: # Check if the item dictionary is not None or empty
+                            processed_lines.append(SaberisLineItem.from_json(raw_item_dict))
 
         return cls(
-            username=username, created_at=created_at, customer_name=customer_name,
-            shipping_address=ship_addr, lines=processed_lines,
+            username=username,
+            created_at=created_at,
+            customer_name=customer_name,
+            shipping_address=ship_addr,
+            lines=processed_lines,
         )
 
     def first_catalog_code(self) -> str:

@@ -62,14 +62,12 @@ def exchange_code_for_token(code: str) -> bool:
         "client_secret": JOBBER_CLIENT_SECRET,
     }
     try:
-        # The Content-Type for this request should be application/x-www-form-urlencoded
-        # The `requests` library handles this automatically when `data` parameter is a dict.
         response = requests.post(JOBBER_TOKEN_URL, data=token_payload, timeout=30)
         response.raise_for_status()  # Raises HTTPError for bad responses (4xx or 5xx)
         token_data = response.json()
 
         access_token = token_data.get("access_token")
-        refresh_token = token_data.get("refresh_token") # Jobber might not always return this
+        refresh_token = token_data.get("refresh_token") # Jobber only returns this if you've configured it to do so in the app settings on their website
         expires_in = token_data.get("expires_in")
 
         if not access_token:

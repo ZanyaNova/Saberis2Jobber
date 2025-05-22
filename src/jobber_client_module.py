@@ -5,6 +5,7 @@ Integrates with jobber_auth_flow to use valid access tokens.
 """
 import requests
 import re
+import json
 from typing import Any, Optional, Tuple, List, TypedDict, Union, Dict, cast
 
 from jobber_auth_flow import get_valid_access_token # Using the real auth flow
@@ -254,7 +255,7 @@ class JobberClient:
         client_create_mutation = """
         mutation ClientCreate($input: ClientCreateInput!) {
           clientCreate(input: $input) {
-            client { id name } # 'name' in response is composed by Jobber
+            client { id name }
             userErrors { message path }
           }
         }"""
@@ -325,7 +326,7 @@ class JobberClient:
                 raise RuntimeError(f"Client creation response missing client ID or client object for '{client_name_str}': {client_create_data}")
 
             client_id = client_object["id"]
-            created_client_jobber_name = client_object.get('name', client_name_str) # 'name' here is from Jobber's response
+            created_client_jobber_name = client_object.get('name', client_name_str)
             print(f"SUCCESS: Created Jobber client '{created_client_jobber_name}' with ID: {client_id}")
 
         except (ConnectionRefusedError, requests.exceptions.RequestException, RuntimeError) as e:
@@ -354,11 +355,19 @@ class JobberClient:
             "province": saberis_addr.get("state"), "postalCode": saberis_addr.get("postalCode"),
             "country": saberis_addr.get("country")
         }
+
+        # --- DEBUG BEGIN: Added print statement for debugging ---
+        print("-" * 70)
+        print("DEBUG: temp_property_address before filtering:")
+        print(json.dumps(temp_property_address, indent=2))
+        print("-" * 70)
+        # --- END: Added print statement ---
+
         filtered_address_dict = {k: v for k, v in temp_property_address.items() if v is not None and v != ""}
         property_address_gql: PropertyAddressInputGQL = cast(PropertyAddressInputGQL, filtered_address_dict)
         property_attributes_item: PropertyAttributesGQL = {"address": property_address_gql}
         actual_input_for_mutation: ActualPropertyCreateInputGQL = {
-            "properties": [property_attributes_item] # This must be a list of property attributes
+            "properties": [property_attributes_item]
         }
 
         property_variables: PropertyCreateVariablesGQL = {
@@ -367,6 +376,17 @@ class JobberClient:
         }
         property_id: str
         try:
+             # --- DEBUG BEGIN: Added print statements for PropertyCreate API Playground ---
+            print("-" * 70)
+            print("GraphQL Mutation for PropertyCreate (for API Playground):")
+            print(property_create_mutation) # This is the mutation query string
+            print("-" * 70)
+            print("GraphQL Variables for PropertyCreate (for API Playground):")
+            # We use json.dumps for a nicely formatted, copyable JSON string
+            print(json.dumps(property_variables, indent=2))
+            print("-" * 70)
+            # --- DEBUG END: Added print statements ---
+
             raw_property_response_data: GraphQLData = self._post(property_create_mutation, property_variables)
             
             property_create_payload_dict = raw_property_response_data.get("propertyCreate")
@@ -537,8 +557,8 @@ if __name__ == "__main__":
     
     # Sample data for testing
     sample_shipping_addr: ShippingAddress = {
-        "address": "123 Example St", "city": "Exampleville", "state": "EX",
-        "postalCode": "E1X 2M3", "country": "EXA"
+        "address": "31 Austin St", "city": "New Haven", "state": "CT",
+        "postalCode": "06515", "country": "USA"
     }
     sample_saberis_order = SaberisOrder(
         username="testuser_client_module", created_at=datetime.now(), # Changed username for clarity
