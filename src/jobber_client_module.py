@@ -8,13 +8,10 @@ import re
 import json
 from typing import Any, Optional, Tuple, List, TypedDict, Union, Dict, cast
 
-from jobber_auth_flow import get_valid_access_token # Using the real auth flow
+from jobber_auth_flow import get_valid_access_token
 from jobber_models import SaberisOrder, QuoteCreateInput, SaberisLineItem, QuoteLineInput, ShippingAddress
 
 JOBBER_GRAPHQL_URL = "https://api.getjobber.com/api/graphql"
-
-# Placeholder functions are now removed as per Key Action 1
-
 
 # --- GraphQL TypedDicts (Specific to Jobber API Structure) ---
 # --- General GraphQL Structures ---
@@ -102,14 +99,34 @@ class PropertyCreateDataPayloadGQL(TypedDict): properties: Optional[List[Propert
 
 # --- Quote Line Item for GQL Mutation ---
 class QuoteLineItemGQL(TypedDict, total=False):
-    description: str; quantity: float; unitPrice: float
-    unitCost: Optional[float]; taxable: Optional[bool]
+    name: str # Changed from description to name
+    quantity: float
+    unitPrice: float
+    saveToProductsAndServices: bool
+    unitCost: Optional[float]
+    taxable: Optional[bool]
+    # description: Optional[str] # Optional: If we decide to add a separate description later
+
 
 # --- Quote Creation GQL TypedDicts ---
-class QuoteCreationOptionsGQL(TypedDict, total=False): draft: Optional[bool]
+class CustomFieldCreateInputGQL(TypedDict, total=False):
+    customFieldConfigurationId: str # EncodedId!
+    valueText: Optional[str]
+    # Add other value types (valueLink, valueArea, valueTrueFalse, valueNumeric, valueDropdown) if needed
+
 class QuoteMutationInputGQL(TypedDict, total=False):
-    clientId: str; propertyId: str; title: str; message: Optional[str]
-    lineItems: List[QuoteLineItemGQL]; creationOptions: Optional[QuoteCreationOptionsGQL]
+    clientId: str
+    propertyId: str
+    title: str
+    message: Optional[str]
+    lineItems: List[QuoteLineItemGQL]
+    quoteNumber: Optional[int]
+    contractDisclaimer: Optional[str]
+    customFields: Optional[List[CustomFieldCreateInputGQL]]
+    # clientViewOptions: Optional[QuoteClientViewOptionsInput]
+        # Note: clientViewOptions can be used to control what the client sees,
+        # e.g., show/hide line items, unit prices, quantities, totals, etc.
+
 class QuoteCreateVariablesGQL(TypedDict): input: QuoteMutationInputGQL
 class QuoteObjectGQL(TypedDict): id: str; quoteNumber: Optional[str]; quoteStatus: str # Structure of 'quote' object
 class QuoteCreateDataPayloadGQL(TypedDict): quote: Optional[QuoteObjectGQL]; userErrors: Optional[List[UserError]] # Structure of 'quoteCreate' in response data
@@ -439,14 +456,43 @@ class JobberClient:
         print(f"INFO: Preparing to create quote with title: '{app_quote_payload.title}' for client: {app_quote_payload.client_id}")
         
         quote_lines_for_gql: List[QuoteLineItemGQL] = []
-        for li_model in app_quote_payload.line_items:
+        for li_model in app_quote_payload.line_items: # li_model is QuoteLineInput
             item_gql: QuoteLineItemGQL = {
-                "description": li_model.name, "quantity": li_model.quantity,
-                "unitPrice": li_model.unit_price, "taxable": li_model.taxable # bool is assignable to Optional[bool]
+                "name": li_model.name, # Was li_model.name to description, now directly to name
+                "quantity": li_model.quantity,
+                "unitPrice": li_model.unit_price,
+                "taxable": li_model.taxable,
+                "saveToProductsAndServices": li_model.save_to_products_and_services
             }
             if li_model.unit_cost is not None:
                 item_gql["unitCost"] = li_model.unit_cost
             quote_lines_for_gql.append(item_gql)
+
+        custom_fields_for_gql: Optional[List[CustomFieldCreateInputGQL]] = None
+        if app_quote_payload.custom_fields:
+            custom_fields_for_gql = []
+            for cf_model in app_quote_payload.custom_fields:
+                # Basic validation, assuming cf_model is a dict with expected keys
+                # TODO: Add more robust validation or use a dataclass for custom_fields in QuoteCreateInput
+                if "customFieldConfigurationId" in cf_model and "valueText" in cf_model:
+                     custom_fields_for_gql.append(cast(CustomFieldCreateInputGQL, cf_model))
+                else:
+                    print(f"WARNING: Skipping custom field due to missing keys: {cf_model}")
+
+
+        quote_mutation_input_gql: QuoteMutationInputGQL = {
+            "clientId": app_quote_payload.client_id,
+            "propertyId": app_quote_payload.property_id,
+            "title": app_quote_payload.title,
+            "message": app_quote_payload.message,
+            "lineItems": quote_lines_for_gql,
+            "quoteNumber": app_quote_payload.quote_number, 
+            "contractDisclaimer": app_quote_payload.contract_disclaimer, 
+        }
+        if custom_fields_for_gql: # Only add if there are custom fields
+            quote_mutation_input_gql["customFields"] = custom_fields_for_gql
+
+        variables_create: QuoteCreateVariablesGQL = {"input": quote_mutation_input_gql}
 
         quote_mutation_input_gql: QuoteMutationInputGQL = {
             "clientId": app_quote_payload.client_id, "propertyId": app_quote_payload.property_id,

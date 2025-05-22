@@ -8,7 +8,7 @@ import hashlib
 import json
 from dataclasses import dataclass, asdict, field
 from datetime import datetime
-from typing import List, TypedDict, Optional, Any, Union, cast
+from typing import List, TypedDict, Optional, Any, Union, cast, Dict
 
 # ---------------------------------------------------------------------------
 # Type Definitions for Saberis Input Structures (Raw JSON Parsing)
@@ -67,7 +67,6 @@ CANADIAN_PROVINCE_TERRITORY_CODES = {
 # Saberis Application Models
 # ---------------------------------------------------------------------------
 
-# Reverting to TypedDict for ShippingAddress as it was simple and likely original intent
 class ShippingAddress(TypedDict):
     """Shipping address as stored and used by SaberisOrder."""
     street1: str
@@ -78,7 +77,7 @@ class ShippingAddress(TypedDict):
     country: str
 
 @dataclass
-class SaberisLineItem: # Reverted name
+class SaberisLineItem:
     """Represents a line item in a Saberis order."""
     type: str
     description: str
@@ -120,8 +119,8 @@ class SaberisOrder:
     username: str
     created_at: datetime
     customer_name: str
-    shipping_address: ShippingAddress # Using the TypedDict version
-    lines: List[SaberisLineItem] = field(default_factory=list)
+    shipping_address: ShippingAddress
+    lines: List[SaberisLineItem] = field(default_factory=list) #type: ignore
 
     @classmethod
     def from_json(cls, doc: SaberisDocumentDict) -> SaberisOrder: # doc is the entire parsed JSON
@@ -213,22 +212,28 @@ class SaberisOrder:
 # Jobber Application Models (Dataclasses) - For Transformation Output
 # ---------------------------------------------------------------------------
 @dataclass
-class QuoteLineInput: # Reverted name
+class QuoteLineInput: 
     """Represents a line item in a Jobber quote, application-level model."""
     name: str
     quantity: float
     unit_price: float
+    save_to_products_and_services: bool = False
     unit_cost: Optional[float] = None
     taxable: bool = False
 
 @dataclass
-class QuoteCreateInput: # Reverted name
+class QuoteCreateInput: 
     """Input for creating a Jobber quote, application-level model."""
     client_id: str
     property_id: str
     title: str
     message: str
-    line_items: List[QuoteLineInput] = field(default_factory=list)
+    line_items: List[QuoteLineInput] = field(default_factory=list) #type: ignore
+    quote_number: Optional[int] = None 
+    contract_disclaimer: Optional[str] = None
+    # Using Dict for simplicity here, will be strongly typed to GQL model in client module
+    custom_fields: Optional[List[Dict[str, Any]]] = field(default_factory=list) #type: ignore
+
 
 # ---------------------------------------------------------------------------
 # Transformation Logic
@@ -237,9 +242,32 @@ def saberis_to_jobber(order: SaberisOrder, client_id: str, property_id: str) -> 
     """Transforms a SaberisOrder into a Jobber QuoteCreateInput."""
     title = order.first_catalog_code()
     message_lines: List[str] = []
+    jobber_custom_fields: List[Dict[str, Any]] = []
+
     for li in order.lines:
-        if li.type == "Text" and not li.description.startswith("Catalog="):
-            message_lines.append(li.description)
+        if li.type == "Text":
+            if li.description.startswith("Catalog="):
+                catalog_value = li.description.split("=", 1)[1].strip()
+                jobber_custom_fields.append({
+                    # TODO: Replace with actual customFieldConfigurationId from Jobber for "Saberis Catalog"
+                    "customFieldConfigurationId": "placeholder_saberis_catalog_id",
+                    "valueText": catalog_value
+                })
+            elif "=" in li.description: # For other key=value text lines
+                key, value = li.description.split("=", 1)
+                key = key.strip()
+                value = value.strip()
+                # TODO: Replace with actual customFieldConfigurationId from Jobber.
+                # Might want a mapping from Saberis key (e.g., "Door Style") to a specific ID,
+                # or a more generic "Saberis Attribute" custom field.
+                jobber_custom_fields.append({
+                    "customFieldConfigurationId": f"placeholder_saberis_attribute_{key.lower().replace(' ', '_')}_id",
+                    "valueText": f"{key}: {value}" # Or just `value` if the key is implied by the Jobber CF
+                })
+                message_lines.append(li.description)
+            else: 
+                 message_lines.append(li.description)
+
     message = "\n".join(message_lines)
 
     jobber_lines: List[QuoteLineInput] = []
@@ -250,12 +278,20 @@ def saberis_to_jobber(order: SaberisOrder, client_id: str, property_id: str) -> 
             QuoteLineInput(
                 name=li.description, quantity=li.quantity, unit_price=li.selling_price,
                 unit_cost=unit_cost, taxable=False,
+                save_to_products_and_services=False # Explicitly set to False
             )
         )
-    if not jobber_lines:
-        jobber_lines.append(QuoteLineInput(name="Misc. Items", quantity=1.0, unit_price=0.0))
+    if not jobber_lines: # Ensure there's at least one line item
+        jobber_lines.append(QuoteLineInput(name="Misc. Items", quantity=1.0, unit_price=0.0, save_to_products_and_services=False))
+
+    # TODO: Get actual quoteNumber from spreadsheet or other source
+    quote_num_placeholder: Optional[int] = 12345 # Placeholder for quote_number
 
     return QuoteCreateInput(
         client_id=client_id, property_id=property_id, title=title,
         message=message, line_items=jobber_lines,
+        quote_number=quote_num_placeholder, # Added
+        # TODO: Set a real contract disclaimer if needed, or load from config
+        contract_disclaimer="Standard terms and conditions apply.", # Added, example
+        custom_fields=jobber_custom_fields # Added
     )
