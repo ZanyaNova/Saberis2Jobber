@@ -143,7 +143,7 @@ def poll_once(jobber_client: JobberClient) -> None:
 
             client_id, property_id = jobber_client.create_client_and_property(order)
             quote_payload = saberis_to_jobber(order, client_id, property_id)
-            quote_id = jobber_client.create_and_send_quote(quote_payload)
+            quote_id = jobber_client.create_quote(quote_payload)
             print(f"Successfully created & sent quote {quote_id} for Saberis order {order.unique_key()}")
 
         except json.JSONDecodeError as e:

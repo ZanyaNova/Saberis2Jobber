@@ -96,25 +96,30 @@ class PropertyCreateDataPayloadGQL(TypedDict): properties: Optional[List[Propert
 # PropertyCreateResponseDataGQL (Optional)
 # class PropertyCreateResponseDataGQL(TypedDict): propertyCreate: Optional[PropertyCreateDataPayloadGQL]
 
-
 # --- Quote Line Item for GQL Mutation ---
 class QuoteLineItemGQL(TypedDict, total=False):
-    name: str # Changed from description to name
-    quantity: float
-    unitPrice: float
-    saveToProductsAndServices: bool
+    name: str  # Required
+    saveToProductsAndServices: bool # Required
+    description: Optional[str] # Optional in API, can map from QuoteLineInput.name or leave out
+    quantity: Optional[float]
+    unitPrice: Optional[float]
     unitCost: Optional[float]
     taxable: Optional[bool]
-    # description: Optional[str] # Optional: If we decide to add a separate description later
+
+    # Other optional fields from QuoteCreateLineItemAttributes API docs (add if needed):
+    # category: Optional[Any] # ProductsAndServicesCategory - Requires its own TypedDict
+    # optional: Optional[bool]
+    # recommended: Optional[bool]
+    # textOnly: Optional[bool]
+    # productOrServiceId: Optional[str] # EncodedId
 
 
-# --- Quote Creation GQL TypedDicts ---
 class CustomFieldCreateInputGQL(TypedDict, total=False):
     customFieldConfigurationId: str # EncodedId!
     valueText: Optional[str]
     # Add other value types (valueLink, valueArea, valueTrueFalse, valueNumeric, valueDropdown) if needed
 
-class QuoteMutationInputGQL(TypedDict, total=False):
+class QuoteCreateAttributesGQL(TypedDict, total=False):
     clientId: str
     propertyId: str
     title: str
@@ -127,27 +132,16 @@ class QuoteMutationInputGQL(TypedDict, total=False):
         # Note: clientViewOptions can be used to control what the client sees,
         # e.g., show/hide line items, unit prices, quantities, totals, etc.
 
-class QuoteCreateVariablesGQL(TypedDict): input: QuoteMutationInputGQL
+class QuoteCreateVariablesGQL(TypedDict): attributes: QuoteCreateAttributesGQL
 class QuoteObjectGQL(TypedDict): id: str; quoteNumber: Optional[str]; quoteStatus: str # Structure of 'quote' object
 class QuoteCreateDataPayloadGQL(TypedDict): quote: Optional[QuoteObjectGQL]; userErrors: Optional[List[UserError]] # Structure of 'quoteCreate' in response data
 # QuoteCreateResponseDataGQL (Optional)
 # class QuoteCreateResponseDataGQL(TypedDict): quoteCreate: Optional[QuoteCreateDataPayloadGQL]
 
 
-# --- Quote Sending GQL TypedDicts ---
-class QuoteSendByIdVariablesGQL(TypedDict): quoteId: str # If mutation is quoteSend(id: $quoteId)
-# If mutation is quoteSend(input: {id: $quoteId}), then:
-# class QuoteSendInputGQL(TypedDict): id: str
-# class QuoteSendVariablesGQL(TypedDict): input: QuoteSendInputGQL
-class QuoteSendDataPayloadGQL(TypedDict): quote: Optional[QuoteObjectGQL]; userErrors: Optional[List[UserError]] # Structure of 'quoteSend' in response data
-# QuoteSendResponseDataGQL (Optional)
-# class QuoteSendResponseDataGQL(TypedDict): quoteSend: Optional[QuoteSendDataPayloadGQL]
-
-
 # General type for variables passed to _post; can be expanded with more specific variable types
 GraphQLMutationVariables = Union[
-    ClientCreateVariablesGQL, PropertyCreateVariablesGQL, QuoteCreateVariablesGQL,
-    QuoteSendByIdVariablesGQL, # Add other specific variable types here
+    ClientCreateVariablesGQL, PropertyCreateVariablesGQL, QuoteCreateVariablesGQL, # Add other specific variable types here
     Dict[str, Any] # Fallback for less strictly typed variables
 ]
 # General type for the 'data' field returned by _post after extracting from GraphQLResponseWrapper
@@ -374,7 +368,8 @@ class JobberClient:
             "street1": saberis_addr.get("S"), 
             "street2": saberis_addr.get(""), 
             "city": saberis_addr.get("city"),
-            "province": saberis_addr.get("state"), "postalCode": saberis_addr.get("postalCode"),
+            "province": saberis_addr.get("province"), 
+            "postalCode": saberis_addr.get("postalCode"),
             "country": saberis_addr.get("country")
         }
 
@@ -448,21 +443,24 @@ class JobberClient:
             
         return client_id, property_id
 
-    def create_and_send_quote(self, app_quote_payload: QuoteCreateInput) -> Tuple[Optional[str], str]:
-        """Creates and then attempts to send a quote in Jobber. Returns (quote_id, status_message)."""
+    def create_quote(self, app_quote_payload: QuoteCreateInput) -> Tuple[Optional[str], str]:
+        """Creates quote in Jobber. Returns (quote_id, status_message)."""
         quote_id: Optional[str] = None
         status_message: str = "Quote processing initiated."
 
         print(f"INFO: Preparing to create quote with title: '{app_quote_payload.title}' for client: {app_quote_payload.client_id}")
         
         quote_lines_for_gql: List[QuoteLineItemGQL] = []
-        for li_model in app_quote_payload.line_items: # li_model is QuoteLineInput
+        for li_model in app_quote_payload.line_items:
+            # Transformation from application model (QuoteLineInput) to GQL model (QuoteLineItemGQL)
             item_gql: QuoteLineItemGQL = {
-                "name": li_model.name, # Was li_model.name to description, now directly to name
+                "name": li_model.name,
                 "quantity": li_model.quantity,
                 "unitPrice": li_model.unit_price,
                 "taxable": li_model.taxable,
-                "saveToProductsAndServices": li_model.save_to_products_and_services
+                "saveToProductsAndServices": False,
+                # Optional: map description (e.g., can also be li_model.name or kept empty)
+                "description": li_model.name # Or None, or a different field if available
             }
             if li_model.unit_cost is not None:
                 item_gql["unitCost"] = li_model.unit_cost
@@ -479,30 +477,24 @@ class JobberClient:
                 else:
                     print(f"WARNING: Skipping custom field due to missing keys: {cf_model}")
 
-
-        quote_mutation_input_gql: QuoteMutationInputGQL = {
+        quote_attributes_gql: QuoteCreateAttributesGQL = {
             "clientId": app_quote_payload.client_id,
             "propertyId": app_quote_payload.property_id,
-            "title": app_quote_payload.title,
+            "title": app_quote_payload.title, 
             "message": app_quote_payload.message,
-            "lineItems": quote_lines_for_gql,
-            "quoteNumber": app_quote_payload.quote_number, 
-            "contractDisclaimer": app_quote_payload.contract_disclaimer, 
-        }
-        if custom_fields_for_gql: # Only add if there are custom fields
-            quote_mutation_input_gql["customFields"] = custom_fields_for_gql
-
-        variables_create: QuoteCreateVariablesGQL = {"input": quote_mutation_input_gql}
-
-        quote_mutation_input_gql: QuoteMutationInputGQL = {
-            "clientId": app_quote_payload.client_id, "propertyId": app_quote_payload.property_id,
-            "title": app_quote_payload.title, "message": app_quote_payload.message,
             "lineItems": quote_lines_for_gql
         }
-        variables_create: QuoteCreateVariablesGQL = {"input": quote_mutation_input_gql}
+        #if custom_fields_for_gql:
+        #    quote_attributes_gql["customFields"] = custom_fields_for_gql
+
+        variables_create: QuoteCreateVariablesGQL = {"attributes": quote_attributes_gql}
+
         create_mutation = """
-        mutation QuoteCreate($input: QuoteCreateInput!) {
-          quoteCreate(input: $input) { quote { id quoteNumber quoteStatus } userErrors { message path } }
+        mutation QuoteCreate($attributes: QuoteCreateAttributes!) {
+        quoteCreate(attributes: $attributes) { 
+            quote { id quoteNumber quoteStatus } 
+            userErrors { message path } 
+        }
         }"""
         
         try:
@@ -532,65 +524,20 @@ class JobberClient:
             quote_id = quote_object["id"]
             initial_status = quote_object.get('quoteStatus', 'Unknown') # quoteStatus is required in QuoteObjectGQL
             status_message = f"Quote created (ID: {quote_id}, Status: {initial_status})."
-            print(f"SUCCESS: {status_message} For title: '{app_quote_payload.title}'. Now attempting to send.")
-
+            print(f"SUCCESS: {status_message} For title: '{app_quote_payload.title}'.")
+            success_message = f"Quote (ID: {quote_id}) sent. New status: {status_message}."
+            return quote_id, success_message
+        
         except (ConnectionRefusedError, requests.exceptions.RequestException, RuntimeError) as e:
             # These are errors from _post or local logic during creation
             status_message = f"Quote creation failed for '{app_quote_payload.title}': {e}"
             print(f"ERROR: {status_message}")
             return None, status_message # Return None for quote_id and the error message
+        
         except Exception as e: # Other unexpected errors during creation
             status_message = f"Unexpected error creating quote '{app_quote_payload.title}': {e}"
             print(f"ERROR: {status_message}")
             return None, status_message
-
-        # --- Send Quote ---
-        if not quote_id: # Should not happen if creation succeeded, but as a safeguard
-            final_status_message = f"{status_message} Skipping sending as quote ID was not obtained."
-            print(f"WARNING: {final_status_message}")
-            return None, final_status_message
-
-        print(f"INFO: Attempting to send quote ID: {quote_id} (Title: '{app_quote_payload.title}')")
-        # Assuming quoteSend(id: $quoteId) structure based on QuoteSendByIdVariablesGQL
-        send_mutation = """
-        mutation QuoteSend($quoteId: ID!) {
-          quoteSend(id: $quoteId) { quote { id quoteStatus } userErrors { message path } }
-        }"""
-        variables_send: QuoteSendByIdVariablesGQL = {"quoteId": quote_id}
-        try:
-            raw_data_send: GraphQLData = self._post(send_mutation, variables_send)
-            quote_send_payload_dict = raw_data_send.get("quoteSend")
-
-            if not isinstance(quote_send_payload_dict, dict):
-                warning_msg = f"Quote sending response for ID {quote_id} missing 'quoteSend' key or not a dict. Response: {raw_data_send}. Quote may not have been sent."
-                print(f"WARNING: {warning_msg}")
-                return quote_id, f"{status_message} Sending status uncertain: {warning_msg}"
-            
-            send_result: QuoteSendDataPayloadGQL = cast(QuoteSendDataPayloadGQL, quote_send_payload_dict)
-            user_errors_send = send_result.get("userErrors")
-            if user_errors_send:
-                error_messages = [f"Path: {e.get('path', 'N/A')}, Message: {e.get('message', 'Unknown error')}" for e in user_errors_send]
-                send_errors_details = '; '.join(error_messages)
-                print(f"WARNING: Jobber userErrors sending quote ID {quote_id}: {send_errors_details}. Response: {send_result}")
-                return quote_id, f"{status_message} Sending encountered user errors: {send_errors_details}"
-            
-            sent_quote_details = send_result.get("quote")
-            final_quote_status = "Unknown after send"
-            if sent_quote_details:
-                final_quote_status = sent_quote_details.get("quoteStatus", "StatusNotProvidedInSendResponse") # quoteStatus is required
-            
-            success_send_message = f"Quote (ID: {quote_id}) sent. New status: {final_quote_status}."
-            print(f"SUCCESS: {success_send_message} (Title: '{app_quote_payload.title}')")
-            return quote_id, success_send_message
-
-        except (ConnectionRefusedError, requests.exceptions.RequestException, RuntimeError) as e:
-            send_fail_message = f"{status_message} Sending failed for quote ID {quote_id}: {e}"
-            print(f"ERROR: {send_fail_message}")
-            return quote_id, send_fail_message # Return created quote_id but with send error message
-        except Exception as e:
-            send_unexpected_fail_message = f"{status_message} Unexpected error sending quote ID {quote_id}: {e}"
-            print(f"ERROR: {send_unexpected_fail_message}")
-            return quote_id, send_unexpected_fail_message
 
 # Example Usage (Illustrative)
 if __name__ == "__main__":
@@ -641,13 +588,13 @@ if __name__ == "__main__":
                 ]
             )
             try:
-                print("\n--- Testing Quote Creation and Sending ---")
-                final_quote_id, final_status_msg = client.create_and_send_quote(sample_quote_app_payload)
+                print("\n--- Testing Quote Creation ---")
+                final_quote_id, final_status_msg = client.create_quote(sample_quote_app_payload)
                 print(f"INFO: Test Result - Quote ID: {final_quote_id}, Final Status: {final_status_msg}")
             except RuntimeError as e_quote: # Catch runtime specifically if needed
-                print(f"ERROR: Test - Runtime error creating/sending quote: {e_quote}")
+                print(f"ERROR: Test - Runtime error creating quote: {e_quote}")
             except Exception as e_quote_general: # General catch
-                print(f"ERROR: Test - General error creating/sending quote: {e_quote_general}")
+                print(f"ERROR: Test - General error creating quote: {e_quote_general}")
                 
     except ConnectionRefusedError as e_auth:
         print(f"ERROR: Test - Authentication error: {e_auth}. Please ensure the application is authorized with Jobber.")
