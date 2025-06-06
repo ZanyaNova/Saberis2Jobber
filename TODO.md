@@ -1,11 +1,7 @@
-Text items: 
-
-Georgetown (B) is doorstyle  
-"Pricelevel" is discarded
-
+OVERALL USE CASE:
+- S2B is used after a job is approved, appending to existing quote to act as inventory management
 
 # TODO:
-- Get saberis checking validated
 - CHECK IF LINE ID 3 is always door style, if so add to description
 - Keep L/R, strip out brackets in the title.
 - Delete this garbo from description: "SKU: SOCABINETS | Saberis ProductType: DEFAULT | Volume: 9 | Weight: 50"
@@ -17,8 +13,11 @@ Georgetown (B) is doorstyle
 Line item names = Brand/CatalogCode, Cabinet code, Door Style, Color 
 
 
-OVERALL
-- S2B is used after a job is approved, appending to existing quote to act as inventory management
 
+NEED:
+How do users indicate when a quote needs line items?
+How do they associate the two
 
+ASSIST:
 brandonr@burnich.com
+

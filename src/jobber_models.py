@@ -10,6 +10,7 @@ from .gsheet.client_sheet_manager import get_brand_if_available
 from dataclasses import dataclass, asdict, field
 from datetime import datetime
 from typing import List, TypedDict, Optional, Any, Union, cast, Dict
+from .text_utilities import remove_curly_braces_and_content
 
 # ---------------------------------------------------------------------------
 # Type Definitions for Saberis Input Structures (Raw JSON Parsing)
@@ -109,12 +110,16 @@ class SaberisLineItem:
         if not saberis_description_content:
             saberis_description_content = obj.get("Text")
         parsed_saberis_description = str(saberis_description_content or "")
-        parsed_line_id: int 
-        if obj.get("LineID") is int:
-            parsed_line_id = obj.get("LineID") #type:ignore
-        else:
+        
+        #Line ID
+        parsed_line_id: int
+        gotten_line_id = obj.get("LineID")
+        if gotten_line_id is None:
             parsed_line_id = -1
             print("Item ", parsed_saberis_description, " had no LineID")
+        else:
+            parsed_line_id = gotten_line_id
+            
 
         if item_type.lower() == "text":
             return SaberisLineItem(type="Text", line_id=parsed_line_id, description=parsed_saberis_description)
@@ -223,7 +228,7 @@ class SaberisOrder:
                     if "Catalog=" in processed_item.description:
                         catalog_id_found = processed_item.description.split("Catalog=")[1]
                         catalog_id_found = get_brand_if_available(catalog_id_found)
-                    if processed_item.line_id == 2 and processed_item.description:
+                    if processed_item.line_id == 2 or processed_item.description:
                         group_style_found = processed_item.description.partition("Pricelevel=")[2] or processed_item.description
 
         elif isinstance(groups_data_from_json, list):
@@ -304,24 +309,24 @@ def saberis_to_jobber(order: SaberisOrder, client_id: str, property_id: str) -> 
         if li.type != "Product": continue
 
         # Construct human-readable name for Jobber
-        jobber_item_name = order.catalog_id
+        product_name = order.catalog_id
         if li.description:
-            jobber_item_name = f"{li.description}"
+            product_name += " | " + remove_curly_braces_and_content(li.description)
         elif li.product_code:
-            jobber_item_name += li.product_code
+            product_name += " product_id_missing_for: " + li.product_code
         else:
-            jobber_item_name = "Unnamed Product"
+            product_name = "Unnamed Product"
         
-        jobber_item_name += order.group_style
+        product_name += " | Style: " + order.group_style
 
         unit_cost_for_jobber = li.cost if li.cost > 0 else None # Saberis 'Cost' becomes Jobber 'unitCost'
         
         jobber_lines.append(
             QuoteLineInput(
-                name=jobber_item_name,
+                name=product_name,
                 quantity=li.quantity,
                 unit_price=li.cost,
-                description="",
+                description= "Full item ID: " + li.description,
                 unit_cost=unit_cost_for_jobber,
                 taxable=False, 
             )

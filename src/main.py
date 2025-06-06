@@ -3,10 +3,6 @@ import os
 import json 
 import pathlib 
 
-#Load environment variables !!before!! importing dependent modules
-from dotenv import load_dotenv #type:ignore
-load_dotenv()
-
 from flask import Flask, request, redirect, url_for 
 
 # Auth and Config
@@ -20,6 +16,7 @@ from .jobber_client_module import JobberClient
 app = Flask(__name__)
 # Secret key is needed for session management (to store OAuth state)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(24))
+
 
 
 # ---------------------------------------------------------------------------

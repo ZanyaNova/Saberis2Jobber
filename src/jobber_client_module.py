@@ -447,17 +447,6 @@ class JobberClient:
                 item_gql["unitCost"] = li_model.unit_cost
             quote_lines_for_gql.append(item_gql)
 
-        custom_fields_for_gql: Optional[List[CustomFieldCreateInputGQL]] = None
-        if app_quote_payload.custom_fields:
-            custom_fields_for_gql = []
-            for cf_model in app_quote_payload.custom_fields:
-                # Basic validation, assuming cf_model is a dict with expected keys
-                # TODO: Add more robust validation or use a dataclass for custom_fields in QuoteCreateInput
-                if "customFieldConfigurationId" in cf_model and "valueText" in cf_model:
-                     custom_fields_for_gql.append(cast(CustomFieldCreateInputGQL, cf_model))
-                else:
-                    print(f"WARNING: Skipping custom field due to missing keys: {cf_model}")
-
         quote_attributes_gql: QuoteCreateAttributesGQL = {
             "clientId": app_quote_payload.client_id,
             "propertyId": app_quote_payload.property_id,
@@ -465,8 +454,6 @@ class JobberClient:
             "message": app_quote_payload.message,
             "lineItems": quote_lines_for_gql
         }
-        #if custom_fields_for_gql:
-        #    quote_attributes_gql["customFields"] = custom_fields_for_gql
 
         variables_create: QuoteCreateVariablesGQL = {"attributes": quote_attributes_gql}
 
