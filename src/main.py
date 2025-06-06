@@ -3,7 +3,7 @@ import os
 import json 
 import pathlib 
 
-#Load environment variables
+#Load environment variables !!before!! importing dependent modules
 from dotenv import load_dotenv #type:ignore
 load_dotenv()
 
