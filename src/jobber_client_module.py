@@ -7,8 +7,8 @@ import requests
 import re
 from typing import Any, Optional, Tuple, List, TypedDict, Union, Dict, cast
 
-from jobber_auth_flow import get_valid_access_token
-from jobber_models import SaberisOrder, QuoteCreateInput, ShippingAddress
+from .jobber_auth_flow import get_valid_access_token
+from .jobber_models import SaberisOrder, QuoteCreateInput, ShippingAddress
 
 JOBBER_GRAPHQL_URL = "https://api.getjobber.com/api/graphql"
 

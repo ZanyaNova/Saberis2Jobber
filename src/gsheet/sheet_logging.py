@@ -1,4 +1,4 @@
-from gsheet_config import GSHEET_LOGSHEET, LOG_PRIORITY_THRESHOLD
+from .gsheet_config import GSHEET_LOGSHEET, LOG_PRIORITY_THRESHOLD
 from datetime import datetime
 import gspread
 

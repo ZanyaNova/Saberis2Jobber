@@ -1,6 +1,6 @@
 from gspread import Worksheet, Cell
-from sheet_logging import add_sheet_log
-from gsheet_config import GSHEET_RECORDSHEET, GSHEET_BRANDSHEET
+from .sheet_logging import add_sheet_log
+from .gsheet_config import GSHEET_RECORDSHEET, GSHEET_BRANDSHEET
 from typing import Final
 
 def get_client_id(saberis_id: str) -> str:
