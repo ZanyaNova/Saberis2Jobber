@@ -60,18 +60,17 @@ def load_tokens() -> Optional[TokenData]:
         # Create a TokenData instance from the loaded dictionary
         # Handle potential missing keys gracefully if the file format could change
         tokens_data = TokenData(
-            access_token=token_dict.get("access_token"), # Use get for safety
+            access_token=token_dict.get("access_token"),
             refresh_token=token_dict.get("refresh_token"),
             expires_at=token_dict.get("expires_at"),
             saved_at=token_dict.get("saved_at", time.time()) # Use default if saved_at wasn't in old file
         )
 
-        # Basic validation (optional but good practice)
         if not tokens_data.access_token:
              print("Warning: Loaded token data is missing access_token.")
-             return None # Or raise an error
+             return None
 
-        _token_cache = tokens_data # Store in cache
+        _token_cache = tokens_data
         return tokens_data
 
     except (IOError, json.JSONDecodeError) as e:

@@ -5,7 +5,7 @@ Georgetown (B) is doorstyle
 
 
 # TODO:
-- Get saberis checking validated
+
 - CHECK IF LINE ID 3 is always door style, if so add to description
 - Keep L/R, strip out brackets in the title.
 - Delete this garbo from description: "SKU: SOCABINETS | Saberis ProductType: DEFAULT | Volume: 9 | Weight: 50"

@@ -102,3 +102,19 @@ if not (0 <= LOG_PRIORITY_THRESHOLD <= 5):
         f"The '{LOG_PRIORITY_THRESHOLD_ENV_VAR_NAME}' ({LOG_PRIORITY_THRESHOLD}) must be an integer "
         "between 0 and 5 (inclusive)."
     )
+
+# --- Open Workbook and Specific Worksheet: Log ---
+BRAND_SHEET_NAME: Final[str] = "CatalogToBrand"  # Define the sheet name as a constant
+
+try:
+    GSHEET_BRANDSHEET: Final[Worksheet] = GSHEET_WORKBOOK.worksheet(BRAND_SHEET_NAME)
+except gspread.exceptions.WorksheetNotFound:
+    raise ValueError(
+        f"The worksheet named '{BRAND_SHEET_NAME}' was not found in the workbook: {WORKBOOK_URL_ENV}. "
+        "Please ensure the sheet exists and the name is correct."
+    )
+except Exception as e:
+    raise RuntimeError(
+        f"An unexpected error occurred while trying to access worksheet '{BRAND_SHEET_NAME}'. "
+        f"Original error: {e}"
+    ) from e

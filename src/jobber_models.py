@@ -6,6 +6,7 @@ from __future__ import annotations  # Allows forward references for type hints
 
 import hashlib
 import json
+from gsheet.client_sheet_manager import get_brand_if_available
 from dataclasses import dataclass, asdict, field
 from datetime import datetime
 from typing import List, TypedDict, Optional, Any, Union, cast, Dict
@@ -30,14 +31,15 @@ class SaberisHeaderDict(TypedDict, total=False):
     """Structure expected within Saberis 'Header' field."""
     Username: str
     Date: str
-    Customer: SaberisCustomerDict # This is correctly typed
-    Shipping: SaberisShippingDict # Using the specific TypedDict if applicable, or Dict[str, Any] if truly varied
-
+    Customer: SaberisCustomerDict 
+    Shipping: SaberisShippingDict 
+    
 class SaberisLineItemDict(TypedDict, total=False):
     """Structure expected within a Saberis 'Line' object."""
     Type: str
     type: str
     Text: str
+    LineID: int
     Description: str
     Quantity: Union[str, float, int]
     List: Union[str, float, int]
@@ -80,6 +82,7 @@ class ShippingAddress(TypedDict):
 class SaberisLineItem:
     """Represents a line item in a Saberis order."""
     type: str
+    line_id: int
     description: str 
     quantity: float = 1.0
     list_price: float = 0.0
@@ -106,9 +109,15 @@ class SaberisLineItem:
         if not saberis_description_content:
             saberis_description_content = obj.get("Text")
         parsed_saberis_description = str(saberis_description_content or "")
+        parsed_line_id: int 
+        if obj.get("LineID") is int:
+            parsed_line_id = obj.get("LineID") #type:ignore
+        else:
+            parsed_line_id = -1
+            print("Item ", parsed_saberis_description, " had no LineID")
 
         if item_type.lower() == "text":
-            return SaberisLineItem(type="Text", description=parsed_saberis_description)
+            return SaberisLineItem(type="Text", line_id=parsed_line_id, description=parsed_saberis_description)
 
         # For "Product" type items
         def safe_float(value: Any) -> float:
@@ -116,11 +125,10 @@ class SaberisLineItem:
             try: return float(value)
             except (ValueError, TypeError): return 0.0
 
-        # START OF MODIFIED CODE BLOCK 2 - Parsing new fields in SaberisLineItem.from_json
+        line_id = int(obj.get("LineID") or -1)
         quantity_prod = safe_float(obj.get("Quantity", 1))
         list_price_prod = safe_float(obj.get("List", 0))
         cost_prod = safe_float(obj.get("Cost", 0))             # This becomes Jobber unitCost
-
         product_code_val = str(obj.get("ProductCode") or "")
         sku_val = str(obj.get("SKU") or "")
         uom_val = str(obj.get("UOM") or "")
@@ -132,6 +140,7 @@ class SaberisLineItem:
         
         return SaberisLineItem(
             type="Product",
+            line_id = line_id,
             description=parsed_saberis_description, # Original Saberis description
             quantity=quantity_prod,
             list_price=list_price_prod,
@@ -154,6 +163,8 @@ class SaberisOrder:
     created_at: datetime
     customer_name: str
     shipping_address: ShippingAddress
+    catalog_id: str
+    group_style: str
     lines: List[SaberisLineItem] = field(default_factory=list) #type: ignore
 
     @classmethod
@@ -196,6 +207,8 @@ class SaberisOrder:
         }
 
         processed_lines: List[SaberisLineItem] = []
+        catalog_id_found: str = "Catalog ID not found"
+        group_style_found: str = "No group style found"
 
         groups_data_from_json: Any = order_node.get("Group")
 
@@ -205,7 +218,13 @@ class SaberisOrder:
             
             for raw_item_dict in raw_lines_list:
                 if raw_item_dict:
-                    processed_lines.append(SaberisLineItem.from_json(raw_item_dict))
+                    processed_item = SaberisLineItem.from_json(raw_item_dict)
+                    processed_lines.append(processed_item)
+                    if "Catalog=" in processed_item.description:
+                        catalog_id_found = processed_item.description.split("Catalog=")[1]
+                        catalog_id_found = get_brand_if_available(catalog_id_found)
+                    if processed_item.line_id == 2 and processed_item.description:
+                        group_style_found = processed_item.description.partition("Pricelevel=")[2] or processed_item.description
 
         elif isinstance(groups_data_from_json, list):
             list_of_group_dicts: List[SaberisGroupDict] = cast(List[SaberisGroupDict], groups_data_from_json)
@@ -223,6 +242,8 @@ class SaberisOrder:
             created_at=created_at,
             customer_name=customer_name,
             shipping_address=ship_addr,
+            catalog_id=catalog_id_found,
+            group_style=group_style_found,
             lines=processed_lines,
         )
 
@@ -276,34 +297,6 @@ class QuoteCreateInput:
 def saberis_to_jobber(order: SaberisOrder, client_id: str, property_id: str) -> QuoteCreateInput: 
     """Transforms a SaberisOrder into a Jobber QuoteCreateInput."""
     title = order.first_catalog_code()
-    message_lines: List[str] = []
-    jobber_custom_fields: List[Dict[str, Any]] = []
-
-    for li in order.lines:
-        if li.type == "Text":
-            if li.description.startswith("Catalog="):
-                catalog_value = li.description.split("=", 1)[1].strip()
-                jobber_custom_fields.append({
-                    # TODO: Replace with actual customFieldConfigurationId from Jobber for "Saberis Catalog"
-                    "customFieldConfigurationId": "placeholder_saberis_catalog_id",
-                    "valueText": catalog_value
-                })
-            elif "=" in li.description: # For other key=value text lines
-                key, value = li.description.split("=", 1)
-                key = key.strip()
-                value = value.strip()
-                # TODO: Replace with actual customFieldConfigurationId from Jobber.
-                # Might want a mapping from Saberis key (e.g., "Door Style") to a specific ID,
-                # or a more generic "Saberis Attribute" custom field.
-                jobber_custom_fields.append({
-                    "customFieldConfigurationId": f"placeholder_saberis_attribute_{key.lower().replace(' ', '_')}_id",
-                    "valueText": f"{key}: {value}" # Or just `value` if the key is implied by the Jobber CF
-                })
-                message_lines.append(li.description)
-            else: 
-                 message_lines.append(li.description)
-
-    message = "\n".join(message_lines)
 
     jobber_lines: List[QuoteLineInput] = []
 
@@ -311,38 +304,15 @@ def saberis_to_jobber(order: SaberisOrder, client_id: str, property_id: str) -> 
         if li.type != "Product": continue
 
         # Construct human-readable name for Jobber
-        jobber_item_name = li.description # Default to original Saberis description
-        if li.product_code and li.description:
-            jobber_item_name = f"{li.product_code} ID: {li.description}"
+        jobber_item_name = order.catalog_id
+        if li.description:
+            jobber_item_name = f"{li.description}"
         elif li.product_code:
-            jobber_item_name = li.product_code
-        elif li.description: # Fallback if only description is present
-             jobber_item_name = li.description
-        else: # Fallback if neither product_code nor description is present
+            jobber_item_name += li.product_code
+        else:
             jobber_item_name = "Unnamed Product"
-
-
-        # Construct the elaborate description string for Jobber
-        desc_parts: List[str] = []
-        if li.sku:
-            desc_parts.append(f"SKU: {li.sku}")
-        # Cost is already mapped to unit_cost, but can be included if desired for visibility
-        # if li.cost > 0:
-        #     desc_parts.append(f"Cost: ${li.cost:.2f}")
-        if li.product_type_saberis:
-            desc_parts.append(f"Saberis ProductType: {li.product_type_saberis}")
-        if li.uom:
-            desc_parts.append(f"UOM: {li.uom}")
-        if li.volume:
-            desc_parts.append(f"Volume: {li.volume}")
-        if li.weight:
-            desc_parts.append(f"Weight: {li.weight}")
-        if li.manufacturer_part_number:
-            desc_parts.append(f"Manuf. P/N: {li.manufacturer_part_number}")
-        if li.manufacturer_sku:
-            desc_parts.append(f"Manuf. SKU: {li.manufacturer_sku}")
         
-        jobber_item_description = "  |  ".join(desc_parts) if desc_parts else None
+        jobber_item_name += order.group_style
 
         unit_cost_for_jobber = li.cost if li.cost > 0 else None # Saberis 'Cost' becomes Jobber 'unitCost'
         
@@ -351,7 +321,7 @@ def saberis_to_jobber(order: SaberisOrder, client_id: str, property_id: str) -> 
                 name=jobber_item_name,
                 quantity=li.quantity,
                 unit_price=li.cost,
-                description=jobber_item_description,
+                description="",
                 unit_cost=unit_cost_for_jobber,
                 taxable=False, 
             )
@@ -364,10 +334,12 @@ def saberis_to_jobber(order: SaberisOrder, client_id: str, property_id: str) -> 
     quote_num_placeholder: Optional[int] = 12345 # Placeholder for quote_number
 
     return QuoteCreateInput(
-        client_id=client_id, property_id=property_id, title=title,
-        message=message, line_items=jobber_lines,
+        client_id=client_id, 
+        property_id=property_id, 
+        title=title,
+        message="No message",
+        line_items=jobber_lines,
         quote_number=quote_num_placeholder, # Added
         # TODO: Set a real contract disclaimer if needed, or load from config
         contract_disclaimer="Standard terms and conditions apply.", # Added, example
-        custom_fields=jobber_custom_fields # Added
     )

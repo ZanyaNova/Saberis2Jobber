@@ -1,6 +1,7 @@
 from gspread import Worksheet, Cell
 from sheet_logging import add_sheet_log
-from gsheet_config import GSHEET_RECORDSHEET
+from gsheet_config import GSHEET_RECORDSHEET, GSHEET_BRANDSHEET
+from typing import Final
 
 def get_client_id(saberis_id: str) -> str:
 
@@ -12,15 +13,15 @@ def get_client_id(saberis_id: str) -> str:
 
         placeholder_jobber_id = saberis_id + '_fake_jobber_id'
         print ('NOT PRODUCTION READY: using fake jobber ID, need to create a client and get the real one')
-        saberis_column_index = 1
-        jobber_column_index = saberis_column_index + 1
+        SABERIS_COLUMN_INDEX: Final[int] = 1
+        JOBBER_COLUMN_INDEX: Final[int] = SABERIS_COLUMN_INDEX + 1
 
-        saberis_column = GSHEET_RECORDSHEET.col_values(saberis_column_index)
+        saberis_column_values = GSHEET_RECORDSHEET.col_values(SABERIS_COLUMN_INDEX)
 
-        new_row_index = len(saberis_column) + 1
+        new_row_index = len(saberis_column_values) + 1
 
-        GSHEET_RECORDSHEET.update_cell(new_row_index, saberis_column_index, saberis_id)
-        GSHEET_RECORDSHEET.update_cell(new_row_index, jobber_column_index, placeholder_jobber_id)
+        GSHEET_RECORDSHEET.update_cell(new_row_index, SABERIS_COLUMN_INDEX, saberis_id)
+        GSHEET_RECORDSHEET.update_cell(new_row_index, JOBBER_COLUMN_INDEX, placeholder_jobber_id)
 
         print('New jobber ID created: ', placeholder_jobber_id)
 
@@ -32,6 +33,30 @@ def get_client_id(saberis_id: str) -> str:
     
     print('Succcess! Jobber ID for', saberis_id, 'is', jobber_id)
     return jobber_id
+
+
+def get_brand_if_available(catalog_id: str) -> str:
+    """
+    Finds and returns the brand associated with a catalog id in the google sheet.
+    If none is found, it creates a line entry in the sheet for a human to associate
+    a brand with later and returns the catalog id.
+    """
+    found_value = get_adjacent_value(GSHEET_BRANDSHEET, catalog_id) 
+
+    if found_value is str:
+        return found_value
+    
+    # Return early if the cell already exists, it's still waiting on humans to add the brand
+    found_key_cell: Cell | None = GSHEET_BRANDSHEET.find(catalog_id) #type: ignore
+    if found_key_cell is Cell:
+        return catalog_id
+    
+    # Since its not been found, add ID to end of list 
+    CATALOG_ID_COLUMN_INDEX: Final[int] = 1
+    catalog_column_values: list[int | float | str | None] = GSHEET_RECORDSHEET.col_values(CATALOG_ID_COLUMN_INDEX)
+    new_row_index: int = len(catalog_column_values) + 1
+    GSHEET_RECORDSHEET.update_cell(new_row_index, CATALOG_ID_COLUMN_INDEX, catalog_id)
+    return catalog_id
 
 
 def get_adjacent_value(sheet: Worksheet, search_value: str) -> str | None:
