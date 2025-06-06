@@ -13,7 +13,7 @@ from .jobber_config import (
     JOBBER_CLIENT_ID, JOBBER_CLIENT_SECRET, JOBBER_REDIRECT_URI,
     JOBBER_AUTHORIZATION_URL, JOBBER_TOKEN_URL
 )
-from token_storage import save_tokens, load_tokens, clear_tokens, TokenData
+from .token_storage import save_tokens, load_tokens, clear_tokens, TokenData
 
 _oauth_state_store: Optional[str] = None
 

@@ -3,7 +3,7 @@ import time
 import os
 from typing import Optional
 
-from jobber_config import TOKEN_FILE_PATH
+from .jobber_config import TOKEN_FILE_PATH
 
 from dataclasses import dataclass, field
 

@@ -6,11 +6,7 @@ Ensures required variables are strings and present.
 import gspread
 from gspread import Client, Spreadsheet, Worksheet
 import os
-from dotenv import load_dotenv
 from typing import Final
-
-# Load environment variables from .env file
-load_dotenv()
 
 # --- Google Sheets API Authentication ---
 try:

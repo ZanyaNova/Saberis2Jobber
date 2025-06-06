@@ -3,17 +3,18 @@ import os
 import json 
 import pathlib 
 
+#Load environment variables
+from dotenv import load_dotenv #type:ignore
+load_dotenv()
+
 from flask import Flask, request, redirect, url_for 
 
 # Auth and Config
-from .jobber_config import load_dotenv 
 from .jobber_auth_flow import get_authorization_url, exchange_code_for_token, get_valid_access_token, verify_state_parameter
 
 # Jobber Business Logic
 from .jobber_models import SaberisOrder, saberis_to_jobber 
 from .jobber_client_module import JobberClient 
-
-load_dotenv() 
 
 # Flask App Initialization
 app = Flask(__name__)

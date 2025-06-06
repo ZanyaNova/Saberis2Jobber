@@ -4,10 +4,7 @@ Loads sensitive information from environment variables.
 Ensures required variables are strings.
 """
 import os
-from dotenv import load_dotenv
-from typing import Final # Use Final for variables that are constants
-
-load_dotenv()
+from typing import Final
 
 try:
     JOBBER_CLIENT_ID: str = os.environ["JOBBER_CLIENT_ID"]

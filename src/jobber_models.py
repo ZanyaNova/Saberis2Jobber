@@ -6,7 +6,7 @@ from __future__ import annotations  # Allows forward references for type hints
 
 import hashlib
 import json
-from gsheet.client_sheet_manager import get_brand_if_available
+from .gsheet.client_sheet_manager import get_brand_if_available
 from dataclasses import dataclass, asdict, field
 from datetime import datetime
 from typing import List, TypedDict, Optional, Any, Union, cast, Dict
