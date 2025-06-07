@@ -4,6 +4,7 @@ Data models for Saberis and Jobber, and transformation logic.
 """
 from __future__ import annotations  # Allows forward references for type hints
 
+import re
 import hashlib
 import json
 from .gsheet.client_sheet_manager import get_brand_if_available
@@ -204,6 +205,10 @@ class SaberisOrder:
         single_group_dict = cast(SaberisSingleGroupWithItemsDict, groups_data_from_json)
         raw_lines_list = single_group_dict.get("Item", [])
 
+        # Helper regex Pattern looks for W=, H=, and D= and captures the numbers that follow.
+        # It's flexible enough to handle spaces and the quote marks.
+        dimension_pattern = re.compile(r'W=.*H=.*D=') #type:ignore
+
         # Process the unified list of raw line items
         for raw_item_dict in raw_lines_list:
             if not raw_item_dict:
@@ -214,6 +219,9 @@ class SaberisOrder:
 
             # If it's a "Text" line, check if it sets a context attribute
             if item_type == "text" and "=" in description:
+                if dimension_pattern.search(description): #type:ignore
+                    continue
+
                 try:
                     key, value = description.split("=", 1)
                     key = key.strip()
