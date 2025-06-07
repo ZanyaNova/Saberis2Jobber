@@ -228,7 +228,8 @@ class SaberisOrder:
                     if "Catalog=" in processed_item.description:
                         catalog_id_found = processed_item.description.split("Catalog=")[1]
                         catalog_id_found = get_brand_if_available(catalog_id_found)
-                    if processed_item.line_id == 2 or processed_item.description:
+                    if int(processed_item.line_id) == 2:
+                        print(processed_item.description)
                         group_style_found = processed_item.description.partition("Pricelevel=")[2] or processed_item.description
 
         elif isinstance(groups_data_from_json, list):
