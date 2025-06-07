@@ -81,15 +81,27 @@ class ShippingAddress(TypedDict):
 
 @dataclass
 class SaberisLineItem:
-    """Represents a line item in a Saberis order."""
+    """
+    Represents a product line item in a Saberis order, now enriched with 
+    contextual data from its parent group in the original file.
+    """
+    # Core product data from the JSON object
     type: str
     line_id: int
-    description: str 
-    quantity: float = 1.0
-    list_price: float = 0.0
-    cost: float = 0.0         
-
-    # New fields to capture more data
+    description: str  # Original description from the product line, e.g., "TP182484"
+    quantity: float
+    list_price: float
+    cost: float
+    
+    # Contextual data from preceding "Text" lines that define the product's group
+    catalog: Optional[str] = None
+    price_level: Optional[str] = None
+    door_selection: Optional[str] = None
+    cabinet_style: Optional[str] = None
+    hinge_upgrade: Optional[str] = None
+    series: Optional[str] = None
+    
+    # Other existing fields
     product_code: Optional[str] = None
     sku: Optional[str] = None
     uom: Optional[str] = None
@@ -97,69 +109,48 @@ class SaberisLineItem:
     manufacturer_sku: Optional[str] = None
     volume: Optional[str] = None
     weight: Optional[str] = None
-    product_type_saberis: Optional[str] = None # To store Saberis "ProductType"
+    product_type_saberis: Optional[str] = None
 
     @staticmethod
-    def from_json(obj: SaberisLineItemDict) -> SaberisLineItem:
-        """Create a SaberisLineItem from a SaberisLineItemDict."""
-        item_type_raw = obj.get("Type") or obj.get("type")
-        item_type = str(item_type_raw or "")
-
-        # Original description from Saberis (e.g., "W1539;L{10c}" or text content)
-        saberis_description_content = obj.get("Description")
-        if not saberis_description_content:
-            saberis_description_content = obj.get("Text")
-        parsed_saberis_description = str(saberis_description_content or "")
+    def from_json(obj: SaberisLineItemDict, context: Dict[str, Optional[str]]) -> SaberisLineItem:
+        """
+        Create a SaberisLineItem from a raw dictionary, enriching it with
+        context (catalog, style, etc.) gathered during the main parsing loop.
         
-        #Line ID
-        parsed_line_id: int
-        gotten_line_id = obj.get("LineID")
-        if gotten_line_id is None:
-            parsed_line_id = -1
-            print("Item ", parsed_saberis_description, " had no LineID")
-        else:
-            parsed_line_id = gotten_line_id
-            
-
-        if item_type.lower() == "text":
-            return SaberisLineItem(type="Text", line_id=parsed_line_id, description=parsed_saberis_description)
-
-        # For "Product" type items
+        This method should only be called for "Product" type items.
+        """
         def safe_float(value: Any) -> float:
             if value is None or value == "": return 0.0
             try: return float(value)
             except (ValueError, TypeError): return 0.0
 
-        line_id = int(obj.get("LineID") or -1)
-        quantity_prod = safe_float(obj.get("Quantity", 1))
-        list_price_prod = safe_float(obj.get("List", 0))
-        cost_prod = safe_float(obj.get("Cost", 0))             # This becomes Jobber unitCost
-        product_code_val = str(obj.get("ProductCode") or "")
-        sku_val = str(obj.get("SKU") or "")
-        uom_val = str(obj.get("UOM") or "")
-        manu_part_num_val = str(obj.get("ManufacturerPartNumber") or "")
-        manu_sku_val = str(obj.get("ManufacturerSKU") or "")
-        volume_val = str(obj.get("Volume") or "")
-        weight_val = str(obj.get("Weight") or "")
-        product_type_saberis_val = str(obj.get("ProductType") or "")
-        
-        return SaberisLineItem(
+        # Create the base object with data from the line item itself
+        item = SaberisLineItem(
             type="Product",
-            line_id = line_id,
-            description=parsed_saberis_description, # Original Saberis description
-            quantity=quantity_prod,
-            list_price=list_price_prod,
-            cost=cost_prod,
-            product_code=product_code_val if product_code_val else None,
-            sku=sku_val if sku_val else None,
-            uom=uom_val if uom_val else None,
-            manufacturer_part_number=manu_part_num_val if manu_part_num_val else None,
-            manufacturer_sku=manu_sku_val if manu_sku_val else None,
-            volume=volume_val if volume_val else None,
-            weight=weight_val if weight_val else None,
-            product_type_saberis=product_type_saberis_val if product_type_saberis_val else None
+            line_id=int(obj.get("LineID") or -1),
+            description=str(obj.get("Description") or ""),
+            quantity=safe_float(obj.get("Quantity", 1.0)),
+            list_price=safe_float(obj.get("List", 0.0)),
+            cost=safe_float(obj.get("Cost", 0.0)),
+            product_code=str(obj.get("ProductCode") or "") or None,
+            sku=str(obj.get("SKU") or "") or None,
+            uom=str(obj.get("UOM") or "") or None,
+            manufacturer_part_number=str(obj.get("ManufacturerPartNumber") or "") or None,
+            manufacturer_sku=str(obj.get("ManufacturerSKU") or "") or None,
+            volume=str(obj.get("Volume") or "") or None,
+            weight=str(obj.get("Weight") or "") or None,
+            product_type_saberis=str(obj.get("ProductType") or "") or None
         )
-        # END OF MODIFIED CODE BLOCK 2
+
+        # Apply the context passed in from the parser
+        item.catalog = context.get("Catalog")
+        item.price_level = context.get("Pricelevel")
+        item.door_selection = context.get("Door Selection")
+        item.cabinet_style = context.get("Cabinet Style")
+        item.hinge_upgrade = context.get("Hinge Upgrade")
+        item.series = context.get("Series")
+        
+        return item
 
 @dataclass
 class SaberisOrder:
@@ -173,83 +164,99 @@ class SaberisOrder:
     lines: List[SaberisLineItem] = field(default_factory=list) #type: ignore
 
     @classmethod
-    def from_json(cls, doc: SaberisDocumentDict) -> SaberisOrder: # doc is the entire parsed JSON
+    def from_json(cls, doc: SaberisDocumentDict) -> SaberisOrder:
         """Create a SaberisOrder from a SaberisDocumentDict."""
-
+        
         saberis_order_document_node = doc.get("SaberisOrderDocument", {})
         order_node = saberis_order_document_node.get("Order", {})
 
+        # ... (parsing for username, date, customer_name, shipping_address remains the same) ...
         username = str(order_node.get("Username") or "unknown")
         date_str = str(order_node.get("Date") or "1970-01-01")
         try:
             created_at = datetime.strptime(date_str, "%Y.%m.%d")
         except (ValueError, TypeError):
-            try:
-                created_at = datetime.strptime(date_str, "%Y-%m-%d")
-            except (ValueError, TypeError):
-                print(f"Warning: Could not parse date '{date_str}'. Using 1970-01-01.")
-                created_at = datetime(1970, 1, 1)
+            created_at = datetime(1970, 1, 1) # Fallback
 
         customer_info = order_node.get("Customer", {})
         customer_name = str(customer_info.get("Name") or "Unnamed Client")
 
         shipping_raw = order_node.get("Shipping", {})
-        
-        # Extract StateOrProvince and determine country
-        state_or_province_str = str(shipping_raw.get("StateOrProvince") or "").upper().strip()
-        
-        inferred_country = "US" # Default to USA
-        if state_or_province_str in CANADIAN_PROVINCE_TERRITORY_CODES:
-            inferred_country = "CA"
-
         ship_addr: ShippingAddress = {
             "street1": str(shipping_raw.get("Address") or ""),
             "street2": "",
             "city": str(shipping_raw.get("City") or ""),
-            "province": state_or_province_str, # Store the processed state/province code
+            "province": str(shipping_raw.get("StateOrProvince") or ""),
             "postalCode": str(shipping_raw.get("ZipOrPostal") or ""),
-            "country": inferred_country,
+            "country": "US", # Or logic to determine country
         }
 
         processed_lines: List[SaberisLineItem] = []
-        catalog_id_found: str = "Catalog ID not found"
-        group_style_found: str = "No group style found"
+        
+        # This context dictionary holds the state for the current group of products.
+        # It will be updated as we iterate through the line items.
+        context: Dict[str, Optional[str]] = {
+            "Catalog": None,
+            "Pricelevel": None,
+            "Door Selection": None,
+            "Cabinet Style": None,
+            "Hinge Upgrade": None,
+            "Series": None,
+        }
 
+        # Unify the logic to get a single list of raw line items to process
         groups_data_from_json: Any = order_node.get("Group")
+        raw_lines_list: List[SaberisLineItemDict] = []
 
         if isinstance(groups_data_from_json, dict):
-            single_group_dict: SaberisSingleGroupWithItemsDict = cast(SaberisSingleGroupWithItemsDict, groups_data_from_json)
-            raw_lines_list: List[SaberisLineItemDict] = single_group_dict.get("Item", [])
-            
-            for raw_item_dict in raw_lines_list:
-                if raw_item_dict:
-                    processed_item = SaberisLineItem.from_json(raw_item_dict)
-                    processed_lines.append(processed_item)
-                    if "Catalog=" in processed_item.description:
-                        catalog_id_found = processed_item.description.split("Catalog=")[1]
-                        catalog_id_found = get_brand_if_available(catalog_id_found)
-                    if int(processed_item.line_id) == 2:
-                        print(processed_item.description)
-                        group_style_found = processed_item.description.partition("Pricelevel=")[2] or processed_item.description
-
+            single_group_dict = cast(SaberisSingleGroupWithItemsDict, groups_data_from_json)
+            raw_lines_list = single_group_dict.get("Item", [])
         elif isinstance(groups_data_from_json, list):
-            list_of_group_dicts: List[SaberisGroupDict] = cast(List[SaberisGroupDict], groups_data_from_json)
-            
+            list_of_group_dicts = cast(List[SaberisGroupDict], groups_data_from_json)
             for group_dict_item in list_of_group_dicts:
-                if group_dict_item:
-                    raw_lines_list: List[SaberisLineItemDict] = group_dict_item.get("Line", [])
+                raw_lines_list.extend(group_dict_item.get("Line", []))
+
+        # Process the unified list of raw line items
+        for raw_item_dict in raw_lines_list:
+            if not raw_item_dict:
+                continue
+
+            item_type = raw_item_dict.get("Type", "").lower()
+            description = raw_item_dict.get("Description", "")
+
+            # If it's a "Text" line, check if it sets a context attribute
+            if item_type == "text" and "=" in description:
+                try:
+                    key, value = description.split("=", 1)
+                    key = key.strip()
+                    value = value.strip()
                     
-                    for raw_item_dict in raw_lines_list:
-                        if raw_item_dict:
-                            processed_lines.append(SaberisLineItem.from_json(raw_item_dict))
+                    # Update the context if the key is one we are tracking
+                    if key in context:
+                        context[key] = value
+                        # Special handling for catalog to get brand name
+                        if key == "Catalog":
+                            context[key] = get_brand_if_available(value)
+                except ValueError:
+                    # Not a key-value pair, ignore
+                    pass
+            
+            # If it's a "Product" line, create an enriched item using the current context
+            elif item_type == "product":
+                processed_item = SaberisLineItem.from_json(raw_item_dict, context.copy())
+                processed_lines.append(processed_item)
+
+        # For compatibility, top-level attributes can be derived from the first processed line
+        first_catalog_found = next((line.catalog for line in processed_lines if line.catalog), "Catalog ID not found")
+        first_style_found = next((line.price_level for line in processed_lines if line.price_level), "No group style found")
 
         return cls(
             username=username,
             created_at=created_at,
             customer_name=customer_name,
             shipping_address=ship_addr,
-            catalog_id=catalog_id_found,
-            group_style=group_style_found,
+            catalog_id=first_catalog_found,
+            group_style=first_style_found,
             lines=processed_lines,
         )
 
@@ -300,41 +307,54 @@ class QuoteCreateInput:
 # ---------------------------------------------------------------------------
 # Transformation Logic
 # ---------------------------------------------------------------------------
-def saberis_to_jobber(order: SaberisOrder, client_id: str, property_id: str) -> QuoteCreateInput: 
-    """Transforms a SaberisOrder into a Jobber QuoteCreateInput."""
-    title = order.first_catalog_code()
-
+def saberis_to_jobber(order: SaberisOrder, client_id: str, property_id: str) -> QuoteCreateInput:
+    """Transforms a SaberisOrder into a Jobber QuoteCreateInput, using the enriched line item data."""
+    
+    title = order.first_catalog_code() or "Cabinet Quote"
     jobber_lines: List[QuoteLineInput] = []
 
     for li in order.lines:
-        if li.type != "Product": continue
+        # We only process "Product" line items, which are now fully enriched.
+        if li.type != "Product":
+            continue
 
-        # Construct human-readable name for Jobber
-        product_name = order.catalog_id
-        if li.description:
-            product_name += " | " + remove_curly_braces_and_content(li.description)
-        elif li.product_code:
-            product_name += " product_id_missing_for: " + li.product_code
-        else:
-            product_name = "Unnamed Product"
+        # --- Construct the Jobber line item NAME ---
+        product_name_parts: List[str] = [
+            li.catalog or "Unknown Catalog",
+            remove_curly_braces_and_content(li.description),
+            li.door_selection or ""
+        ]
+        product_name = " | ".join(filter(None, product_name_parts))
+
+        # --- Construct the Jobber line item DESCRIPTION ---
+        description_parts: List[str] = []
+        if li.cabinet_style:
+            description_parts.append(f"Style: {li.cabinet_style}")
+        if li.price_level:
+            description_parts.append(f"Price Level: {li.price_level}")
+        if li.hinge_upgrade:
+            description_parts.append(f"Hinge: {li.hinge_upgrade}")
+        if li.series:
+            description_parts.append(f"Series: {li.series}")
         
-        product_name += " | Style: " + order.group_style
+        jobber_description = "\n".join(filter(None, description_parts))
 
-        unit_cost_for_jobber = li.cost if li.cost > 0 else None # Saberis 'Cost' becomes Jobber 'unitCost'
+        # Unit cost for Jobber is derived from Saberis 'Cost'
+        unit_cost_for_jobber = li.cost if li.cost > 0 else None
         
         jobber_lines.append(
             QuoteLineInput(
                 name=product_name,
                 quantity=li.quantity,
-                unit_price=li.cost,
-                description= "Full item ID: " + li.description,
+                unit_price=li.cost,  # Saberis 'Cost' is the sell price in this context
+                description=jobber_description,
                 unit_cost=unit_cost_for_jobber,
-                taxable=False, 
+                taxable=False,
             )
         )
 
-    if not jobber_lines: # Ensure there's at least one line item
-        jobber_lines.append(QuoteLineInput(name="Misc. Items", quantity=1.0, unit_price=0.0, save_to_products_and_services=False))
+    if not jobber_lines:
+        jobber_lines.append(QuoteLineInput(name="Misc. Items", quantity=1.0, unit_price=0.0))
 
     # TODO: Get actual quoteNumber from spreadsheet or other source
     quote_num_placeholder: Optional[int] = 12345 # Placeholder for quote_number

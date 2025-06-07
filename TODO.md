@@ -4,7 +4,6 @@ OVERALL USE CASE:
 # TODO:
 - CHECK IF LINE ID 3 is always door style, if so add to description
 - Keep L/R, strip out brackets in the title.
-- Delete this garbo from description: "SKU: SOCABINETS | Saberis ProductType: DEFAULT | Volume: 9 | Weight: 50"
 - Check how 2 different catelogs are represented. Door styles might change between.
 - Investigate color
 - Create a catalog code-to-human brand name. System populated catalog codes if an entry isn't found, and uses brand name only if its found, otherwise continues using catalog code.
