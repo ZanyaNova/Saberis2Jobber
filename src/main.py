@@ -3,7 +3,7 @@ import os
 import json 
 import pathlib 
 
-from flask import Flask, request, redirect, url_for 
+from flask import Flask, request, redirect, url_for, render_template
 
 # Auth and Config
 from .jobber_auth_flow import get_authorization_url, exchange_code_for_token, get_valid_access_token, verify_state_parameter
@@ -17,55 +17,29 @@ app = Flask(__name__)
 # Secret key is needed for session management (to store OAuth state)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(24))
 
-
-
 # ---------------------------------------------------------------------------
-# Flask Web Routes for OAuth
+# Flask Web Routes
 # ---------------------------------------------------------------------------
 @app.route('/')
 def home():
     status_message = "Checking authorization status..."
+    is_authorized = False
     try:
-        is_authorized = get_valid_access_token() is not None
-        status_message = "Authorized" if is_authorized else "Not Authorized (or token refresh failed)"
+        # Check if we have a valid token.
+        if get_valid_access_token() is not None:
+            is_authorized = True
+            status_message = "Authorized"
+        else:
+            status_message = "Not Authorized"
+            
     except Exception as e:
         status_message = f"Error checking auth status: {e}"
 
-    auth_url_val = url_for('authorize_jobber_route') # Renamed route function
-    callback_url_val = url_for('jobber_callback_route', _external=True) # Renamed route function
-    
-    message = request.args.get('message', '') # For displaying success/error messages
-
-    return f"""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Jobber Integration Service</title>
-        <style>
-            body {{ font-family: sans-serif; margin: 20px; line-height: 1.6; }}
-            h1 {{ color: #333; }}
-            p {{ color: #555; }}
-            code {{ background-color: #f4f4f4; padding: 2px 6px; border-radius: 4px; }}
-            .button {{ display: inline-block; padding: 10px 15px; background-color: #007bff; color: white; text-decoration: none; border-radius: 5px; }}
-            .button:hover {{ background-color: #0056b3; }}
-            .message {{ padding: 10px; margin-bottom: 15px; border-radius: 4px; }}
-            .success {{ background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }}
-            .error {{ background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }}
-        </style>
-    </head>
-    <body>
-        <h1>Jobber Integration Service</h1>
-        {f'<div class="message success">{message}</div>' if message and "successful" in message.lower() else ''}
-        {f'<div class="message error">{message}</div>' if message and "failed" in message.lower() else ''}
-        <p><strong>Status:</strong> {status_message}</p>
-        <p><a href="{auth_url_val}" class="button">Authorize with Jobber</a></p>
-        <p>Ensure your Jobber App Redirect URI is set to: <code>{callback_url_val}</code></p>
-        <p>If you've authorized and the worker isn't running, you might need to start it separately using <code>python main.py worker</code>.</p>
-    </body>
-    </html>
-    """
+    return render_template(
+        "index.html", 
+        is_authorized=is_authorized,
+        status_message=status_message
+    )
 
 @app.route('/authorize_jobber_start') # Renamed to avoid conflict with any module named authorize_jobber
 def authorize_jobber_route():

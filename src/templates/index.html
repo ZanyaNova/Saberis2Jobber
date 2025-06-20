@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="dashboard-container" style="padding: 20px; font-family: sans-serif;">
+
+    <h1>Saberis2Jobber Dashboard</h1>
+    <p><strong>Status:</strong> {{ status_message }}</p>
+
+    {# If the user is NOT authorized, show the authorization button. #}
+    {% if not is_authorized %}
+        <div style="margin-top: 20px; padding: 15px; border: 1px solid #f5c6cb; background-color: #f8d7da;">
+            <p style="color: #721c24;">You must authorize the application before you can continue.</p>
+            <a href="{{ url_for('authorize_jobber_route') }}" class="button">Authorize with Jobber</a>
+            <p style="margin-top: 10px;">Ensure your Jobber App Redirect URI is set to: <code>{{ url_for('jobber_callback_route', _external=True) }}</code></p>
+        </div>
+
+    {# If the user IS authorized, show our new Alpine.js dashboard UI. #}
+    {% else %}
+        <div class="main-dashboard" x-data="{...}">
+            <p style="color: green;">Authorization successful. Loading dashboard...</p>
+        </div>
+    {% endif %}
+
+</div>
+{% endblock %}
