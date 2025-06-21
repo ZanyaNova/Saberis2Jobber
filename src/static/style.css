@@ -9,7 +9,7 @@
     opacity: 1;
     visibility: visible;
     pointer-events: auto;
-    transition: opacity 0.1s ease-in-out;
+    transition: opacity 0.2s ease-in-out;
 }
 
 /* Make the article a positioning context and add space at the top */
@@ -22,11 +22,11 @@ article.export-card {
 .quantity-container {
     position: absolute;
     top: 0.75rem;
-    right: 1rem;
+    right: .75rem;
     display: flex;          
     align-items: top;    
     gap: 0.5rem;            
-    transition: opacity 0.1s ease-in-out;
+    transition: opacity 0.2s ease-in-out;
 }
 
 /* A class to apply when the card is not selected */
@@ -35,10 +35,8 @@ article.export-card {
     pointer-events: none; /* Prevents clicks on the disabled input */
 }
 
-/* A little styling for the input itself */
 .quantity-container input[type="number"] {
     width: 90px;
-    margin-top: -0.5rem; /* Pull the input up closer to the label */
 }
 
 .quantity-container label {
