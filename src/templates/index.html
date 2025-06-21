@@ -1,25 +1,53 @@
-{% extends "base.html" %}
+<div x-data="saberisDashboard()" x-init="init()">
+            
+    <button @click="refreshExports()">Refresh Saberis Exports</button>
+    <span x-show="isLoading" style="margin-left: 10px;">Loading...</span>
 
-{% block content %}
-<div class="dashboard-container" style="padding: 20px; font-family: sans-serif;">
-
-    <h1>Saberis2Jobber Dashboard</h1>
-    <p><strong>Status:</strong> {{ status_message }}</p>
-
-    {# If the user is NOT authorized, show the authorization button. #}
-    {% if not is_authorized %}
-        <div style="margin-top: 20px; padding: 15px; border: 1px solid #f5c6cb; background-color: #f8d7da;">
-            <p style="color: #721c24;">You must authorize the application before you can continue.</p>
-            <a href="{{ url_for('authorize_jobber_route') }}" class="button">Authorize with Jobber</a>
-            <p style="margin-top: 10px;">Ensure your Jobber App Redirect URI is set to: <code>{{ url_for('jobber_callback_route', _external=True) }}</code></p>
+    <div style="display: flex; gap: 20px; margin-top: 20px;">
+        
+        <div style="flex: 2; border: 1px solid #ccc; padding: 10px;">
+            <h2>1. Select Jobber Quote</h2>
+            <template x-for="quote in jobberQuotes" :key="quote.id">
+                <div 
+                    @click="selectedQuoteId = quote.id"
+                    :style="{ border: selectedQuoteId === quote.id ? '2px solid blue' : '1px solid grey', padding: '10px', marginBottom: '10px', cursor: 'pointer' }"
+                >
+                    <strong x-text="quote.client_name"></strong>
+                    <p x-text="quote.shipping_address"></p>
+                </div>
+            </template>
         </div>
 
-    {# If the user IS authorized, show our new Alpine.js dashboard UI. #}
-    {% else %}
-        <div class="main-dashboard" x-data="{...}">
-            <p style="color: green;">Authorization successful. Loading dashboard...</p>
+        <div style="flex: 2; border: 1px solid #ccc; padding: 10px;">
+            <div :class="selectedQuoteId ? 'content-visible' : 'content-hidden'">
+                <h2>2. Select Saberis Exports</h2>
+                <template x-for="exportItem in saberisExports" :key="exportItem.saberis_id">
+                    <div :style="{ border: selectedExportIds.includes(exportItem.saberis_id) ? '2px solid green' : '1px solid grey', padding: '10px', marginBottom: '10px' }">
+                        <input type="checkbox" :value="exportItem.saberis_id" x-model="selectedExportIds">
+                        <strong x-text="exportItem.customer_name"></strong>
+                        <p x-text="exportItem.shipping_address"></p>
+                        <p x-text="`Exported by: ${exportItem.username} on ${exportItem.export_date}`"></p>
+                        
+                        <div x-show="selectedExportIds.includes(exportItem.saberis_id)">
+                            <label>Quantity:</label>
+                            <input type="number" min="1" placeholder="Enter Qty" 
+                                :style="{ border: !getQuantityFor(exportItem.saberis_id) ? '1px solid red' : '1px solid grey' }"
+                                @input="setQuantityFor(exportItem.saberis_id, $event.target.value)">
+                        </div>
+                    </div>
+                </template>
+            </div>
         </div>
-    {% endif %}
 
+        <div style="flex: 1; border: 1px solid #ccc; padding: 10px;">
+            <div :class="selectedExportIds.length > 0 ? 'content-visible' : 'content-hidden'">
+                <h2>3. Actions</h2>
+                <button :disabled="!isReadyToSend()" @click="sendToJobber()">Send Items to Jobber</button>
+                <p x-show="!isReadyToSend()" style="color: red; font-size: 0.9em;">
+                    All selected designs must have a quantity.
+                </p>
+            </div>
+        </div>
+
+    </div>
 </div>
-{% endblock %}

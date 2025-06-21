@@ -1,0 +1,13 @@
+[
+    {
+        "saberis_id": "b7431bda-aa0c-42a7-8407-59f08dc7b27e",
+        "original_filename": "sample_order_1.json",
+        "stored_path": "C:\\Coding Projects\\Kiah\\Saberis2Jobber\\src\\processed_exports\\b7431bda-aa0c-42a7-8407-59f08dc7b27e.json",
+        "ingested_at": "2025-06-21T14:02:46.326792",
+        "export_date": "2025.06.07",
+        "customer_name": "Affinity",
+        "username": "KiahHochstetler",
+        "shipping_address": "552 Wilcox Ln, Corvallis, MT",
+        "sent_to_jobber": false
+    }
+]

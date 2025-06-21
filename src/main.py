@@ -1,6 +1,8 @@
 import os
 
-from flask import Flask, request, redirect, url_for, render_template
+from flask import Flask, request, redirect, url_for, render_template, jsonify
+
+from .saberis_ingestion import ingest_saberis_exports
 
 # Auth and Config
 from .jobber_auth_flow import get_authorization_url, exchange_code_for_token, get_valid_access_token, verify_state_parameter
@@ -14,6 +16,43 @@ app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(24))
 # ---------------------------------------------------------------------------
 # Flask Web Routes
 # ---------------------------------------------------------------------------
+
+
+@app.route('/api/jobber-quotes')
+def get_jobber_quotes():
+    """
+    API endpoint to serve a MOCK list of approved Jobber quotes.
+    In the future, this will fetch real data from the Jobber API.
+    """
+    mock_quotes = [
+        {
+            "id": "quote_123",
+            "client_name": "Affinity",
+            "shipping_address": "552 Wilcox Ln, Corvallis, MT",
+            "total": "5,842.00",
+            "approved_date": "2025-06-15"
+        },
+        {
+            "id": "quote_456",
+            "client_name": "Burnich",
+            "shipping_address": "123 Main St, Anytown, USA",
+            "total": "12,300.50",
+            "approved_date": "2025-06-12"
+        }
+    ]
+    return jsonify(mock_quotes)
+
+@app.route('/api/saberis-exports')
+def get_saberis_exports():
+    """
+    API endpoint to run the ingestion logic and return the manifest.
+    This simulates refreshing the list of available exports.
+    """
+    # This function already scans a folder and returns the manifest list
+    # See: src/saberis_ingestion.py
+    manifest_records = ingest_saberis_exports()
+    return jsonify(manifest_records)
+
 @app.route('/')
 def home():
     status_message = "Checking authorization status..."
