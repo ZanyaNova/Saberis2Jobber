@@ -1,53 +1,75 @@
+{% extends "base.html" %}
+
+{% block content %}
 <div x-data="saberisDashboard()" x-init="init()">
+    
+    <div class="container">
+        <p>
+            <button @click="refreshExports()">Refresh Saberis Exports</button>
+            <span x-show="isLoading" style="margin-left: 10px;">Loading...</span>
+        </p>
+
+        <div class="grid">
             
-    <button @click="refreshExports()">Refresh Saberis Exports</button>
-    <span x-show="isLoading" style="margin-left: 10px;">Loading...</span>
+            <section>
+                <h2>1. Select Jobber Quote</h2>
+                <template x-for="quote in jobberQuotes" :key="quote.id">
+                    <article 
+                        @click="selectedQuoteId = quote.id"
+                        :class="{ 'selected-card': selectedQuoteId === quote.id }"
+                        style="cursor: pointer;"
+                    >
+                        <h4 x-text="quote.client_name"></h4>
+                        <p x-text="quote.shipping_address"></p>
+                    </article>
+                </template>
+            </section>
 
-    <div style="display: flex; gap: 20px; margin-top: 20px;">
-        
-        <div style="flex: 2; border: 1px solid #ccc; padding: 10px;">
-            <h2>1. Select Jobber Quote</h2>
-            <template x-for="quote in jobberQuotes" :key="quote.id">
-                <div 
-                    @click="selectedQuoteId = quote.id"
-                    :style="{ border: selectedQuoteId === quote.id ? '2px solid blue' : '1px solid grey', padding: '10px', marginBottom: '10px', cursor: 'pointer' }"
-                >
-                    <strong x-text="quote.client_name"></strong>
-                    <p x-text="quote.shipping_address"></p>
-                </div>
-            </template>
-        </div>
-
-        <div style="flex: 2; border: 1px solid #ccc; padding: 10px;">
-            <div :class="selectedQuoteId ? 'content-visible' : 'content-hidden'">
+            <section :class="selectedQuoteId ? 'content-visible' : 'content-hidden'">
                 <h2>2. Select Saberis Exports</h2>
                 <template x-for="exportItem in saberisExports" :key="exportItem.saberis_id">
-                    <div :style="{ border: selectedExportIds.includes(exportItem.saberis_id) ? '2px solid green' : '1px solid grey', padding: '10px', marginBottom: '10px' }">
-                        <input type="checkbox" :value="exportItem.saberis_id" x-model="selectedExportIds">
-                        <strong x-text="exportItem.customer_name"></strong>
+                    <article :class="{ 'selected-export': selectedExportIds.includes(exportItem.saberis_id) }">
+                        <label>
+                            <input type="checkbox" :value="exportItem.saberis_id" x-model="selectedExportIds">
+                            <strong x-text="exportItem.customer_name"></strong>
+                        </label>
                         <p x-text="exportItem.shipping_address"></p>
-                        <p x-text="`Exported by: ${exportItem.username} on ${exportItem.export_date}`"></p>
+                        <footer>
+                            <small x-text="`Exported by: ${exportItem.username} on ${exportItem.export_date}`"></small>
+                        </footer>
                         
                         <div x-show="selectedExportIds.includes(exportItem.saberis_id)">
                             <label>Quantity:</label>
-                            <input type="number" min="1" placeholder="Enter Qty" 
-                                :style="{ border: !getQuantityFor(exportItem.saberis_id) ? '1px solid red' : '1px solid grey' }"
+                            <input 
+                                type="number" 
+                                min="1" 
+                                placeholder="Enter Qty"
+                                :aria-invalid="!getQuantityFor(exportItem.saberis_id)"
                                 @input="setQuantityFor(exportItem.saberis_id, $event.target.value)">
                         </div>
-                    </div>
+                    </article>
                 </template>
-            </div>
-        </div>
+            </section>
 
-        <div style="flex: 1; border: 1px solid #ccc; padding: 10px;">
-            <div :class="selectedExportIds.length > 0 ? 'content-visible' : 'content-hidden'">
+            <aside :class="selectedExportIds.length > 0 ? 'content-visible' : 'content-hidden'">
                 <h2>3. Actions</h2>
                 <button :disabled="!isReadyToSend()" @click="sendToJobber()">Send Items to Jobber</button>
-                <p x-show="!isReadyToSend()" style="color: red; font-size: 0.9em;">
+                <p x-show="!isReadyToSend()" style="color: var(--pico-color-red-500); font-size: 0.9em;">
                     All selected designs must have a quantity.
                 </p>
-            </div>
-        </div>
+            </aside>
 
+        </div>
     </div>
 </div>
+
+<style>
+    .selected-card, .selected-export {
+        border-color: var(--pico-primary-border);
+        box-shadow: 0 0 0 2px var(--pico-primary);
+    }
+    aside {
+        padding-left: var(--pico-spacing);
+    }
+</style>
+{% endblock %}
