@@ -11,3 +11,43 @@
     pointer-events: auto;
     transition: opacity 0.1s ease-in-out;
 }
+
+/* Make the article a positioning context and add space at the top */
+article.export-card {
+    position: relative;
+    padding-top: 1.5rem;
+}
+
+/* This container will hold our quantity input in the top right */
+.quantity-container {
+    position: absolute;
+    top: 0.75rem;
+    right: 1rem;
+    display: flex;          
+    align-items: top;    
+    gap: 0.5rem;            
+    transition: opacity 0.1s ease-in-out;
+}
+
+/* A class to apply when the card is not selected */
+.quantity-container.is-disabled {
+    opacity: 0.6;
+    pointer-events: none; /* Prevents clicks on the disabled input */
+}
+
+/* A little styling for the input itself */
+.quantity-container input[type="number"] {
+    width: 90px;
+    margin-top: -0.5rem; /* Pull the input up closer to the label */
+}
+
+.quantity-container label {
+    font-size: var(--pico-font-size-small);
+    margin-bottom: 0;
+}
+
+/* Override Pico's invalid icon on our specific quantity inputs */
+.quantity-container input[aria-invalid="true"] {
+    background-image: none;
+    padding-right: var(--pico-form-element-spacing-horizontal); /* Reset padding */
+}

@@ -5,8 +5,10 @@
     
     <div class="container">
         <p>
-            <button @click="refreshExports()">Refresh Saberis Exports</button>
-            <span x-show="isLoading" style="margin-left: 10px;">Loading...</span>
+            <button @click="refreshExports()" :disabled="isLoading">
+                <span x-show="!isLoading">Refresh Saberis Exports</span>
+                <span x-show="isLoading" aria-busy="true">Refreshing...</span>
+            </button>
         </p>
 
         <div class="grid">
@@ -14,11 +16,7 @@
             <section>
                 <h2>1. Select Jobber Quote</h2>
                 <template x-for="quote in jobberQuotes" :key="quote.id">
-                    <article 
-                        @click="selectedQuoteId = quote.id"
-                        :class="{ 'selected-card': selectedQuoteId === quote.id }"
-                        style="cursor: pointer;"
-                    >
+                    <article @click="selectedQuoteId = quote.id" :class="{ 'selected-card': selectedQuoteId === quote.id }" style="cursor: pointer;">
                         <h4 x-text="quote.client_name"></h4>
                         <p x-text="quote.shipping_address"></p>
                     </article>
@@ -26,9 +24,31 @@
             </section>
 
             <section :class="selectedQuoteId ? 'content-visible' : 'content-hidden'">
-                <h2>2. Select Saberis Exports</h2>
+                <h2>2. Select Designs (Saberis)</h2>
                 <template x-for="exportItem in saberisExports" :key="exportItem.saberis_id">
-                    <article :class="{ 'selected-export': selectedExportIds.includes(exportItem.saberis_id) }">
+                    
+                    <article 
+                        :class="{ 'selected-export': selectedExportIds.includes(exportItem.saberis_id) }" 
+                        class="export-card"
+                    >
+                        
+                        <div 
+                            class="quantity-container" 
+                            :class="{ 'is-disabled': !selectedExportIds.includes(exportItem.saberis_id) }"
+                        >
+                            <label :for="'qty-' + exportItem.saberis_id">Qty:</label>
+                            <input
+                                :id="'qty-' + exportItem.saberis_id"
+                                type="number"
+                                min="1"
+                                :disabled="!selectedExportIds.includes(exportItem.saberis_id)"
+                                @input="setQuantityFor(exportItem.saberis_id, $event.target.value)"
+                                :value="quantities[exportItem.saberis_id] || ''"
+                                
+                                :aria-invalid="selectedExportIds.includes(exportItem.saberis_id) && !getQuantityFor(exportItem.saberis_id)"
+                            >
+                        </div>
+
                         <label>
                             <input type="checkbox" :value="exportItem.saberis_id" x-model="selectedExportIds">
                             <strong x-text="exportItem.customer_name"></strong>
@@ -37,24 +57,15 @@
                         <footer>
                             <small x-text="`Exported by: ${exportItem.username} on ${exportItem.export_date}`"></small>
                         </footer>
-                        
-                        <div x-show="selectedExportIds.includes(exportItem.saberis_id)">
-                            <label>Quantity:</label>
-                            <input 
-                                type="number" 
-                                min="1" 
-                                placeholder="Enter Qty"
-                                :aria-invalid="!getQuantityFor(exportItem.saberis_id)"
-                                @input="setQuantityFor(exportItem.saberis_id, $event.target.value)">
-                        </div>
+
                     </article>
                 </template>
             </section>
 
-            <aside :class="selectedExportIds.length > 0 ? 'content-visible' : 'content-hidden'">
+            <aside :class="isReadyToSend() ? 'content-visible' : 'content-hidden'">
                 <h2>3. Actions</h2>
                 <button :disabled="!isReadyToSend()" @click="sendToJobber()">Send Items to Jobber</button>
-                <p x-show="!isReadyToSend()" style="color: var(--pico-color-red-500); font-size: 0.9em;">
+                <p x-show="!isReadyToSend() && selectedExportIds.length > 0" style="color: var(--pico-color-red-500); font-size: 0.9em;">
                     All selected designs must have a quantity.
                 </p>
             </aside>
@@ -72,4 +83,70 @@
         padding-left: var(--pico-spacing);
     }
 </style>
+
+<script>
+    function saberisDashboard() {
+        return {
+            // State
+            isLoading: false,
+            jobberQuotes: [],
+            saberisExports: [],
+            selectedQuoteId: null,
+            selectedExportIds: [],
+            quantities: {}, // e.g., { 'saberis_id_1': 2, 'saberis_id_2': 1 }
+
+            // Methods
+            init() {
+                this.fetchJobberQuotes();
+                this.refreshExports();
+            },
+            
+            async fetchJobberQuotes() {
+                // This will eventually fetch from the real Jobber API
+                const response = await fetch('/api/jobber-quotes');
+                this.jobberQuotes = await response.json();
+            },
+
+            async refreshExports() {
+                this.isLoading = true;
+                const response = await fetch('/api/saberis-exports');
+                this.saberisExports = await response.json();
+                this.isLoading = false;
+            },
+
+            getQuantityFor(saberisId) {
+                const qty = this.quantities[saberisId];
+                return qty && !isNaN(parseInt(qty, 10)) && parseInt(qty, 10) > 0;
+            },
+
+            setQuantityFor(saberisId, value) {
+                this.quantities[saberisId] = parseInt(value, 10);
+            },
+
+            isReadyToSend() {
+                if (this.selectedExportIds.length === 0) {
+                    return false;
+                }
+                // Check if EVERY selected export has a valid quantity.
+                return this.selectedExportIds.every(id => this.getQuantityFor(id));
+            },
+
+            sendToJobber() {
+                if (!this.isReadyToSend()) {
+                    alert('Please ensure all selected items have a quantity greater than zero.');
+                    return;
+                }
+                alert('Sending to Jobber...');
+                // TODO: Implement the actual API call
+                console.log({
+                    quoteId: this.selectedQuoteId,
+                    exports: this.selectedExportIds.map(id => ({
+                        saberis_id: id,
+                        quantity: this.quantities[id]
+                    }))
+                });
+            }
+        };
+    }
+</script>
 {% endblock %}
