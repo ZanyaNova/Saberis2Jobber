@@ -1,16 +1,10 @@
-import time
 import os
-import json 
-import pathlib 
 
 from flask import Flask, request, redirect, url_for, render_template
 
 # Auth and Config
 from .jobber_auth_flow import get_authorization_url, exchange_code_for_token, get_valid_access_token, verify_state_parameter
 
-# Jobber Business Logic
-from .jobber_models import SaberisOrder, saberis_to_jobber 
-from .jobber_client_module import JobberClient 
 
 # Flask App Initialization
 app = Flask(__name__)
@@ -81,95 +75,6 @@ def jobber_callback_route():
         return redirect(url_for('home', message="Authorization failed: Could not exchange code for token. Check server logs."))
 
 # ---------------------------------------------------------------------------
-# Polling Worker Logic 
-# ---------------------------------------------------------------------------
-POLL_SECONDS = 30 
-
-def poll_once(jobber_client: JobberClient) -> None:
-    """One poll cycle – fetch Saberis docs, process, create Jobber items."""
-    print(f"\n--- Starting poll cycle at {time.strftime('%Y-%m-%d %H:%M:%S')} ---")
-    
-    BASE_DIR = pathlib.Path(__file__).resolve().parent
-    DOC_DIR  = BASE_DIR / "example_docs" 
-
-    if not DOC_DIR.is_dir():
-        print(f"Warning: Example documents directory not found at {DOC_DIR}")
-        print("Please create it and add sample JSON files (e.g., order1.json) to test the polling worker.")
-        return
-
-    sample_files = list(DOC_DIR.glob("*.json"))
-    if not sample_files:
-        print(f"No sample JSON files found in {DOC_DIR}. Skipping Saberis processing for this cycle.")
-        return
-
-    for path_obj in sample_files:
-        path_str = str(path_obj)
-        print(f"Processing Saberis document: {path_str}")
-        try:
-            doc_content = path_obj.read_text()
-            if not doc_content.strip():
-                print(f"Warning: File {path_str} is empty. Skipping.")
-                continue
-            doc = json.loads(doc_content)
-            order = SaberisOrder.from_json(doc)
-            client_id, property_id = jobber_client.create_client_and_property(order)
-            quote_payload = saberis_to_jobber(order, client_id, property_id)
-            quote_id = jobber_client.create_quote(quote_payload)
-            print(f"Successfully created & sent quote {quote_id} for Saberis order {order.unique_key()}")
-
-        except json.JSONDecodeError as e:
-            print(f"Error decoding JSON from {path_str}: {e}")
-        except ConnectionRefusedError as e: 
-            print(f"Jobber API connection/authorization error: {e}. Worker will pause. Please check authorization status via web UI.")
-            # This indicates a token issue (e.g. invalid, expired and couldn't refresh).
-            # The worker should pause and wait for re-authorization.
-            return # Stop this poll cycle; it will be restarted by start_worker after a delay.
-        except RuntimeError as e: 
-            print(f"Runtime error processing order from {path_str} with Jobber: {e}")
-        except Exception as e:
-            print(f"An unexpected error occurred processing {path_str}: {e}")
-            # Consider logging traceback for unexpected errors:
-            # import traceback
-            # traceback.print_exc()
-    print(f"--- Poll cycle finished at {time.strftime('%Y-%m-%d %H:%M:%S')} ---")
-
-
-def start_worker():
-    """Initializes JobberClient and starts the polling loop."""
-    print("Initializing Jobber Client for worker...")
-    
-    jobber_service_client = JobberClient()
-
-    print("Starting Saberis -> Jobber worker. Press Ctrl-C to exit.")
-    try:
-        while True:
-            # get_valid_access_token will attempt to load/refresh.
-            # If it returns None, auth is not established or refresh failed.
-            current_token = get_valid_access_token() 
-            if not current_token:
-                print("Jobber authorization lost or not established. Worker pausing.")
-                print(f"Please visit http://localhost:{os.environ.get('FLASK_PORT', 5000)}{url_for('authorize_jobber_route')} to authorize.")
-                # Wait longer before retrying if auth is lost/unavailable
-                time.sleep(POLL_SECONDS * 2) # e.g., 60 seconds
-                continue # Skip poll_once and re-check token in the next loop iteration
-
-            # Update the client's token in case it was refreshed.
-            # This ensures the JobberClient instance uses the latest token.
-            jobber_service_client.access_token = current_token
-            
-            poll_once(jobber_service_client)
-            print(f"Waiting {POLL_SECONDS} seconds for next poll cycle...")
-            time.sleep(POLL_SECONDS)
-    except KeyboardInterrupt:
-        print("\nWorker stopped by user.")
-    except Exception as e:
-        print(f"Critical error in worker loop: {e}")
-        # import traceback
-        # traceback.print_exc()
-    finally:
-        print("Worker has shut down.")
-
-# ---------------------------------------------------------------------------
 # Main Guard
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
@@ -177,9 +82,7 @@ if __name__ == "__main__":
     # Default port for Flask
     flask_port = int(os.environ.get("FLASK_PORT", 5000))
 
-    if len(sys.argv) > 1 and sys.argv[1].lower() == "worker":
-        start_worker()
-    elif len(sys.argv) > 1 and sys.argv[1].lower() == "web":
+    if len(sys.argv) > 1 and sys.argv[1].lower() == "web":
         if not os.environ.get("JOBBER_REDIRECT_URI"):
             print(f"Warning: JOBBER_REDIRECT_URI is not set. The OAuth callback may fail.")
             print(f"Defaulting to http://localhost:{flask_port}/jobber/callback for now. Please set it in your .env file.")
