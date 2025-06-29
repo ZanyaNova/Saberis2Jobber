@@ -79,6 +79,34 @@ def _create_empty_str_dict() -> Dict[str, str]:
 # Saberis Application Models
 # ---------------------------------------------------------------------------
 
+class QuoteLineEditItemGQL(TypedDict):
+    """
+    Represents a single line item being added to an existing quote.
+    Aligns with the 'QuoteCreateLineItemAttributes' from the Jobber API.
+    """
+    name: str
+    quantity: float
+    unitPrice: float
+    description: Optional[str]
+    unitCost: Optional[float]
+    taxable: bool
+
+class QuoteLineItemGQL(TypedDict, total=False):
+    name: str  # Required
+    saveToProductsAndServices: bool # Required
+    description: Optional[str] # Optional in API, can map from QuoteLineInput.name or leave out
+    quantity: Optional[float]
+    unitPrice: Optional[float]
+    unitCost: Optional[float]
+    taxable: Optional[bool]
+
+    # Other optional fields from QuoteCreateLineItemAttributes API docs (add if needed):
+    # category: Optional[Any] # ProductsAndServicesCategory - Requires its own TypedDict
+    # optional: Optional[bool]
+    # recommended: Optional[bool]
+    # textOnly: Optional[bool]
+    # productOrServiceId: Optional[str] # EncodedId
+
 class ShippingAddress(TypedDict):
     """Shipping address as stored and used by SaberisOrder."""
     street1: str
@@ -354,3 +382,52 @@ def saberis_to_jobber(order: SaberisOrder, client_id: str, property_id: str) -> 
         # TODO: Set a real contract disclaimer if needed, or load from config
         contract_disclaimer="Standard terms and conditions apply.", # Added, example
     )
+
+def get_line_items_from_export(stored_path: str, ui_quantity: int) -> List[QuoteLineEditItemGQL]:
+    """
+    Reads a stored Saberis export, transforms its line items, and returns them
+    in the format expected by the Jobber API for adding to an existing quote.
+    """
+    try:
+        with open(stored_path, 'r') as f:
+            saberis_data = json.load(f)
+    except (IOError, json.JSONDecodeError) as e:
+        print(f"Error processing export file {stored_path}: {e}")
+        return []
+
+    saberis_order = SaberisOrder.from_json(saberis_data)
+    jobber_lines: List[QuoteLineEditItemGQL] = []
+
+    for li in saberis_order.lines:
+        if li.type != "Product":
+            continue
+
+        # Construct the Jobber line item NAME
+        product_name_parts = [
+            li.catalog,
+            remove_curly_braces_and_content(li.description)
+        ]
+
+        # Construct the Jobber line item DESCRIPTION
+        description_parts: list[str] = []
+        
+        for key, value in li.attributes.items():
+            description_parts.append(f"{key}: {value}")
+            if key in FIELDs_TO_PUT_IN_TITLE:
+                product_name_parts.append(value)
+        
+        product_name = " | ".join(filter(None, product_name_parts))
+        jobber_description = "\n".join(description_parts)
+
+        # Create the GQL object for the Jobber Client
+        line_item: QuoteLineEditItemGQL = {
+            "name": product_name,
+            "quantity": li.quantity * ui_quantity,
+            "unitPrice": li.cost, # Using Saberis cost as the unit price
+            "description": jobber_description,
+            "unitCost": li.cost if li.cost > 0 else None,
+            "taxable": False
+        }
+        jobber_lines.append(line_item)
+
+    return jobber_lines

@@ -8,7 +8,7 @@ import re
 from typing import Any, Optional, Tuple, List, TypedDict, Union, Dict, cast
 
 from .jobber_auth_flow import get_valid_access_token
-from .jobber_models import SaberisOrder, QuoteCreateInput, ShippingAddress
+from .jobber_models import SaberisOrder, QuoteCreateInput, ShippingAddress, QuoteLineItemGQL, QuoteLineEditItemGQL
 
 JOBBER_GRAPHQL_URL = "https://api.getjobber.com/api/graphql"
 
@@ -117,17 +117,6 @@ class ClientMutationInputGQL(TypedDict, total=False):
     phones: Optional[List[ClientPhoneInputGQL]] 
     emails: Optional[List[ClientEmailInputGQL]] 
 
-class QuoteLineEditItemGQL(TypedDict):
-    """
-    Represents a single line item being added to an existing quote.
-    Aligns with the 'QuoteCreateLineItemAttributes' from the Jobber API.
-    """
-    name: str
-    quantity: float
-    unitPrice: float
-    description: Optional[str]
-    unitCost: Optional[float]
-    taxable: bool
 
 class QuoteCreateLineItemsInputGQL(TypedDict):
     """The 'lineItems' object nested within the mutation variables."""
@@ -208,21 +197,7 @@ class PropertyCreateDataPayloadGQL(TypedDict): properties: Optional[List[Propert
 # class PropertyCreateResponseDataGQL(TypedDict): propertyCreate: Optional[PropertyCreateDataPayloadGQL]
 
 # --- Quote Line Item for GQL Mutation ---
-class QuoteLineItemGQL(TypedDict, total=False):
-    name: str  # Required
-    saveToProductsAndServices: bool # Required
-    description: Optional[str] # Optional in API, can map from QuoteLineInput.name or leave out
-    quantity: Optional[float]
-    unitPrice: Optional[float]
-    unitCost: Optional[float]
-    taxable: Optional[bool]
 
-    # Other optional fields from QuoteCreateLineItemAttributes API docs (add if needed):
-    # category: Optional[Any] # ProductsAndServicesCategory - Requires its own TypedDict
-    # optional: Optional[bool]
-    # recommended: Optional[bool]
-    # textOnly: Optional[bool]
-    # productOrServiceId: Optional[str] # EncodedId
 
 
 class CustomFieldCreateInputGQL(TypedDict, total=False):

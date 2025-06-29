@@ -6,22 +6,26 @@ from .saberis_ingestion import ingest_saberis_exports
 
 # Auth and Config
 from .jobber_auth_flow import get_authorization_url, exchange_code_for_token, get_valid_access_token, verify_state_parameter
-from .jobber_client_module import JobberClient, QuoteNodeGQL
-from typing import Dict, Any
+from .jobber_client_module import JobberClient, QuoteNodeGQL, QuoteLineEditItemGQL
+from .jobber_models import get_line_items_from_export
+from typing import Dict, Any, TypedDict, List
 
 # Flask App Initialization
 app = Flask(__name__)
 # Secret key is needed for session management (to store OAuth state)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(24))
 
+class SaberisExportPayload(TypedDict):
+    saberis_id: str
+    quantity: int
 
+class SendToJobberPayload(TypedDict):
+    quoteId: str
+    exports: List[SaberisExportPayload]
 
 # ---------------------------------------------------------------------------
 # Data Transformation
 # ---------------------------------------------------------------------------
-
-
-
 
 def _transform_quote_for_ui(quote_node: QuoteNodeGQL) -> Dict[str, Any]:
     """Transforms a detailed QuoteNodeGQL object into a simple dict for the UI."""
@@ -49,6 +53,7 @@ def _transform_quote_for_ui(quote_node: QuoteNodeGQL) -> Dict[str, Any]:
         "total": f"${total:,.2f}",
         "approved_date": quote_node["transitionedAt"].split('T')[0]
     }
+
 
 
 # ---------------------------------------------------------------------------
@@ -102,6 +107,47 @@ def get_saberis_exports():
     # See: src/saberis_ingestion.py
     manifest_records = ingest_saberis_exports()
     return jsonify(manifest_records)
+
+@app.route('/api/send-to-jobber', methods=['POST'])
+def send_to_jobber():
+    """
+    API endpoint to receive selected Saberis exports and add them as
+    line items to a specified Jobber quote.
+    """
+    if get_valid_access_token() is None:
+        return jsonify({"error": "Not authorized with Jobber"}), 401
+
+    data: SendToJobberPayload = request.get_json()
+    quote_id = data.get('quoteId')
+    exports_payload = data.get('exports')
+
+    if not quote_id or not exports_payload:
+        return jsonify({"error": "Missing quoteId or exports data"}), 400
+
+    jobber_client = JobberClient()
+    saberis_export_records = ingest_saberis_exports()
+    manifest = {item['saberis_id']: item for item in saberis_export_records}
+
+    all_line_items: List[QuoteLineEditItemGQL] = []
+
+    for export_data in exports_payload:
+        saberis_id = export_data.get('saberis_id')
+        quantity = export_data.get('quantity')
+        
+        if saberis_id and quantity and saberis_id in manifest:
+            stored_path = manifest[saberis_id]['stored_path']
+            line_items = get_line_items_from_export(stored_path, quantity)
+            all_line_items.extend(line_items)
+
+    if not all_line_items:
+        return jsonify({"error": "No valid line items could be generated from the selected exports"}), 400
+
+    success, message = jobber_client.add_line_items_to_quote(quote_id, all_line_items)
+
+    if success:
+        return jsonify({"message": message})
+    else:
+        return jsonify({"error": message}), 500
 
 @app.route('/')
 def home():

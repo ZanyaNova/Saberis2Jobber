@@ -247,20 +247,6 @@
                 }
             },
 
-            sendToJobber() {
-                if (!this.isReadyToSend()) {
-                    
-                    return;
-                }
-                alert('Sending to Jobber...');
-                console.log({
-                    quoteId: this.selectedQuoteId,
-                    exports: this.selectedExportIds.map(id => ({
-                        saberis_id: id,
-                        quantity: this.quantities[id]
-                    }))
-                });
-            }
         };
     }
 </script>
