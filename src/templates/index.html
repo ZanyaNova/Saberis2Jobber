@@ -40,7 +40,7 @@
             </section>
 
             <section :class="selectedQuoteId ? 'content-visible' : 'content-hidden'">
-                <h2>2. Select Designs (Saberis)</h2>
+                <h2>2. Select Design(s) & Qty</h2>
                 <template x-for="exportItem in saberisExports" :key="exportItem.saberis_id">
                     
                     <article 
@@ -79,7 +79,10 @@
 
             <aside :class="isReadyToSend() ? 'content-visible' : 'content-hidden'">
                 <h2>3. Actions</h2>
-                <button :disabled="!isReadyToSend()" @click="sendToJobber()">Send Items to Jobber</button>
+                <button @click="sendToJobber()" :disabled="!isReadyToSend() || isSending">
+                    <span x-show="!isSending">Send Items to Jobber</span>
+                    <span x-show="isSending" aria-busy="true">Sending...</span>
+                </button>
                 <p x-show="!isReadyToSend() && selectedExportIds.length > 0" style="color: var(--pico-color-red-500); font-size: 0.9em;">
                     All selected designs must have a quantity.
                 </p>
@@ -111,6 +114,7 @@
             // State
             isLoading: false,
             isLoadingQuotes: false,
+            isSending: false,
             
             // Jobber
             authorizationError: false,
@@ -190,9 +194,62 @@
                 return this.selectedExportIds.every(id => this.getQuantityFor(id));
             },
 
-            sendToJobber() {
+            async sendToJobber() {
+                if (isSending) {
+                    return;
+                }
+
                 if (!this.isReadyToSend()) {
                     alert('Please ensure all selected items have a quantity greater than zero.');
+                    return;
+                }
+
+                if (!confirm(`Are you sure you want to add items from ${this.selectedExportIds.length} export(s) to the selected Jobber Quote?`)) {
+                    return;
+                }
+
+                this.isSending = true;
+
+                const payload = {
+                    quoteId: this.selectedQuoteId,
+                    exports: this.selectedExportIds.map(id => ({
+                        saberis_id: id,
+                        quantity: this.quantities[id]
+                    }))
+                };
+
+                try {
+                    const response = await fetch('/api/send-to-jobber', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(payload),
+                    });
+
+                    const result = await response.json();
+
+                    if (!response.ok) {
+                        throw new Error(result.error || `HTTP error! status: ${response.status}`);
+                    }
+
+                    alert(result.message || 'Successfully sent items to Jobber!');
+                    // Optionally, reset the state after a successful send
+                    this.selectedExportIds = [];
+                    this.quantities = {};
+
+
+                } catch (error) {
+                    console.error("Error sending to Jobber:", error);
+                    alert(`An error occurred: ${error.message}`);
+                } finally {
+                    this.isSending = false;
+                }
+            },
+
+            sendToJobber() {
+                if (!this.isReadyToSend()) {
+                    
                     return;
                 }
                 alert('Sending to Jobber...');

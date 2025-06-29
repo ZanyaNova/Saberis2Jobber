@@ -117,10 +117,66 @@ class ClientMutationInputGQL(TypedDict, total=False):
     phones: Optional[List[ClientPhoneInputGQL]] 
     emails: Optional[List[ClientEmailInputGQL]] 
 
+class QuoteLineEditItemGQL(TypedDict):
+    """
+    Represents a single line item being added to an existing quote.
+    Aligns with the 'QuoteCreateLineItemAttributes' from the Jobber API.
+    """
+    name: str
+    quantity: float
+    unitPrice: float
+    description: Optional[str]
+    unitCost: Optional[float]
+    taxable: bool
+
+class QuoteCreateLineItemsInputGQL(TypedDict):
+    """The 'lineItems' object nested within the mutation variables."""
+    lineItems: List[QuoteLineEditItemGQL]
+
+class QuoteCreateLineItemsVariablesGQL(TypedDict):
+    """
+    The complete, flattened variables for the quoteCreateLineItems mutation.
+    This structure now has unique keys compared to other variable types in the Union.
+    """
+    quoteId: str
+    lineItems: List[QuoteLineEditItemGQL]
+
+class AddedLineItemNodeGQL(TypedDict):
+    """Represents a line item within the returned quote's lineItems connection."""
+    id: str
+
+class AddedLineItemsEdgeGQL(TypedDict):
+    """Edge for the lineItems connection."""
+    node: AddedLineItemNodeGQL
+
+class LineItemsConnectionGQL(TypedDict):
+    """The lineItems connection on the returned quote object."""
+    edges: List[AddedLineItemsEdgeGQL]
+    totalCount: int
+
+class QuoteAfterAddingItemsGQL(TypedDict):
+    """The 'quote' object returned by the mutation."""
+    id: str
+    lineItems: LineItemsConnectionGQL
+
+class QuoteCreateLineItemsPayloadGQL(TypedDict):
+    """The 'quoteCreateLineItems' payload in the response data."""
+    quote: Optional[QuoteAfterAddingItemsGQL]
+    userErrors: Optional[List[UserError]]
+
+class QuoteCreateLineItemsDataGQL(TypedDict):
+    """The 'data' field in the GraphQL response for this specific mutation."""
+    quoteCreateLineItems: QuoteCreateLineItemsPayloadGQL
+
+
 class ClientCreateVariablesGQL(TypedDict): 
     input: ClientMutationInputGQL
 class ClientObjectGQL(TypedDict): id: str; name: str # Structure of 'client' object in response
 class ClientCreateDataPayloadGQL(TypedDict): client: Optional[ClientObjectGQL]; userErrors: Optional[List[UserError]] # Structure of 'clientCreate' in response data
+
+
+
+
 # ClientCreateResponseDataGQL (Optional - for typing the whole 'data' field for this specific mutation)
 # class ClientCreateResponseDataGQL(TypedDict): clientCreate: Optional[ClientCreateDataPayloadGQL]
 
@@ -314,6 +370,63 @@ class JobberClient:
             error_type_name = type(e).__name__
             print(f"ERROR: A network request to Jobber API failed for {log_query_identifier} ({error_type_name}): {e}")
             raise
+
+    def add_line_items_to_quote(self, quote_id: str, line_items: List[QuoteLineEditItemGQL]) -> Tuple[bool, str]:
+        """
+        Adds line items to an existing Jobber quote with strict typing.
+
+        Args:
+            quote_id: The ID of the quote to add line items to.
+            line_items: A list of line items to add.
+
+        Returns:
+            A tuple containing a boolean indicating success and a status message.
+        """
+        # Corrected mutation: uses 'lineItems' as a direct argument, not nested under 'input'.
+        mutation = """
+        mutation QuoteCreateLineItems($quoteId: EncodedId!, $lineItems: [QuoteCreateLineItemAttributes!]!) {
+          quoteCreateLineItems(quoteId: $quoteId, lineItems: $lineItems) {
+            quote {
+              id
+              lineItems {
+                totalCount
+              }
+            }
+            userErrors {
+              message
+              path
+            }
+          }
+        }
+        """
+        # Corrected variables: The structure is now flat.
+        variables: QuoteCreateLineItemsVariablesGQL = {
+            "quoteId": quote_id,
+            "lineItems": line_items,
+        }
+
+        try:
+            raw_data: GraphQLData = self._post(mutation, variables) #type:ignore
+            response_data = cast(QuoteCreateLineItemsDataGQL, raw_data)
+
+            result: QuoteCreateLineItemsPayloadGQL = response_data["quoteCreateLineItems"]
+
+            user_errors = result.get("userErrors")
+            if user_errors:
+                error_messages = [f"Path: {e.get('path', 'N/A')}, Message: {e.get('message', 'Unknown error')}" for e in user_errors]
+                return False, f"Failed to add line items due to user errors: {'; '.join(error_messages)}"
+
+            quote_data = result.get("quote")
+            if not quote_data or not quote_data.get("id"):
+                return False, "Failed to add line items: API response did not include the updated quote object."
+
+            success_message = f"Successfully added {len(line_items)} line item(s) to quote {quote_data['id']}."
+            return True, success_message
+
+        except (ConnectionRefusedError, requests.exceptions.RequestException, RuntimeError) as e:
+            return False, f"An error occurred while adding line items: {e}"
+        except (KeyError, TypeError) as e:
+            return False, f"An error occurred while parsing the API response: {e}. The response structure may have changed."
 
     def create_client_and_property(self, order: SaberisOrder) -> Tuple[str, str]:
         """Creates a client and then a property for that client in Jobber."""
