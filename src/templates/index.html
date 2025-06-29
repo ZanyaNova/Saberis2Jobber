@@ -23,7 +23,10 @@
                 <template x-for="quote in jobberQuotes" :key="quote.id">
                     <article @click="selectedQuoteId = quote.id" :class="{ 'selected-card': selectedQuoteId === quote.id }" style="cursor: pointer;">
                         <h4 x-text="quote.client_name"></h4>
-                        <p x-text="quote.shipping_address"></p>
+                        <footer>
+                            <small x-text="quote.shipping_address"></small></br>
+                            <small x-text="`Approved on: ${quote.approved_date}`" class="exported-by-label"></small>
+                        </footer>
                     </article>
                 </template>
 
