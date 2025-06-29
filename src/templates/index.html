@@ -48,14 +48,13 @@
                                 :aria-invalid="selectedExportIds.includes(exportItem.saberis_id) && !getQuantityFor(exportItem.saberis_id)"
                             >
                         </div>
-
                         <label>
                             <input type="checkbox" :value="exportItem.saberis_id" x-model="selectedExportIds">
                             <strong x-text="exportItem.customer_name"></strong>
                         </label>
-                        <p x-text="exportItem.shipping_address"></p>
                         <footer>
-                            <small x-text="`Exported by: ${exportItem.username} on ${exportItem.export_date}`"></small>
+                            <small x-text="exportItem.shipping_address"></small> </br>
+                            <small x-text="`Exported by: ${exportItem.username} on ${exportItem.export_date}`" class="exported-by-label"></small>
                         </footer>
 
                     </article>

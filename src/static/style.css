@@ -15,7 +15,7 @@
 /* Make the article a positioning context and add space at the top */
 article.export-card {
     position: relative;
-    padding-top: 1.5rem;
+    padding-top: .8rem;
 }
 
 /* This container will hold our quantity input in the top right */
@@ -48,4 +48,9 @@ article.export-card {
 .quantity-container input[aria-invalid="true"] {
     background-image: none;
     padding-right: var(--pico-form-element-spacing-horizontal); /* Reset padding */
+}
+
+.exported-by-label {
+    opacity: 50%;
+    font-size: small;
 }
