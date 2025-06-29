@@ -92,7 +92,8 @@ class QuoteLineEditItemGQL(TypedDict):
     taxable: bool
     saveToProductsAndServices: bool
 
-class QuoteLineItemGQL(TypedDict, total=False):
+class QuoteLineItemGQL(TypedDict, total=True):
+    id: str
     name: str  # Required
     saveToProductsAndServices: bool # Required
     description: Optional[str] # Optional in API, can map from QuoteLineInput.name or leave out
@@ -411,12 +412,15 @@ def get_line_items_from_export(stored_path: str, ui_quantity: int) -> List[Quote
 
         # Construct the Jobber line item DESCRIPTION
         description_parts: list[str] = []
-        
+
         for key, value in li.attributes.items():
             description_parts.append(f"{key}: {value}")
             if key in FIELDs_TO_PUT_IN_TITLE:
                 product_name_parts.append(value)
-        
+
+        # REMOVED: The unique line ID is no longer needed in the name
+        # product_name_parts.append(f"ref-L{li.line_id}")
+
         product_name = " | ".join(filter(None, product_name_parts))
         jobber_description = "\n".join(description_parts)
 
@@ -424,11 +428,11 @@ def get_line_items_from_export(stored_path: str, ui_quantity: int) -> List[Quote
         line_item: QuoteLineEditItemGQL = {
             "name": product_name,
             "quantity": li.quantity * ui_quantity,
-            "unitPrice": li.cost, # Using Saberis cost as the unit price
+            "unitPrice": li.cost,
             "description": jobber_description,
             "unitCost": li.cost if li.cost > 0 else None,
             "taxable": False,
-            "saveToProductsAndServices": True,
+            "saveToProductsAndServices": False
         }
         jobber_lines.append(line_item)
 

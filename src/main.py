@@ -6,7 +6,7 @@ from .saberis_ingestion import ingest_saberis_exports
 
 # Auth and Config
 from .jobber_auth_flow import get_authorization_url, exchange_code_for_token, get_valid_access_token, verify_state_parameter
-from .jobber_client_module import JobberClient, QuoteNodeGQL, QuoteLineEditItemGQL
+from .jobber_client_module import JobberClient, QuoteNodeGQL, QuoteLineEditItemGQL, QuoteEditLineItemInputGQL
 from .jobber_models import get_line_items_from_export
 from typing import Dict, Any, TypedDict, List
 
@@ -111,8 +111,11 @@ def get_saberis_exports():
 @app.route('/api/send-to-jobber', methods=['POST'])
 def send_to_jobber():
     """
-    API endpoint to receive selected Saberis exports and add them as
-    line items to a specified Jobber quote.
+    API endpoint to add/update items on a Jobber quote from Saberis exports.
+    1. Fetches the current line items on the quote.
+    2. Compares with items generated from Saberis exports.
+    3. Updates quantities for existing items.
+    4. Adds new items that don't exist.
     """
     if get_valid_access_token() is None:
         return jsonify({"error": "Not authorized with Jobber"}), 401
@@ -128,26 +131,64 @@ def send_to_jobber():
     saberis_export_records = ingest_saberis_exports()
     manifest = {item['saberis_id']: item for item in saberis_export_records}
 
-    all_line_items: List[QuoteLineEditItemGQL] = []
-
+    # --- New Logic: Step 1 - Generate all desired line items ---
+    all_desired_line_items: List[QuoteLineEditItemGQL] = []
     for export_data in exports_payload:
         saberis_id = export_data.get('saberis_id')
         quantity = export_data.get('quantity')
-        
+
         if saberis_id and quantity and saberis_id in manifest:
             stored_path = manifest[saberis_id]['stored_path']
             line_items = get_line_items_from_export(stored_path, quantity)
-            all_line_items.extend(line_items)
+            all_desired_line_items.extend(line_items)
 
-    if not all_line_items:
-        return jsonify({"error": "No valid line items could be generated from the selected exports"}), 400
+    if not all_desired_line_items:
+        return jsonify({"error": "No valid line items could be generated"}), 400
 
-    success, message = jobber_client.add_line_items_to_quote(quote_id, all_line_items)
+    # --- New Logic: Step 2 - Fetch existing line items from the quote ---
+    quote_details = jobber_client.get_quote_with_line_items(quote_id)
+    if not quote_details:
+        return jsonify({"error": "Could not fetch existing quote details from Jobber."}), 500
 
-    if success:
-        return jsonify({"message": message})
+    existing_line_items_nodes = quote_details.get("lineItems", {}).get("nodes", [])
+    existing_items_map = {item['name']: item for item in existing_line_items_nodes}
+
+    # --- New Logic: Step 3 - Compare and categorize ---
+    items_to_add: List[QuoteLineEditItemGQL] = []
+    items_to_update: List[QuoteEditLineItemInputGQL] = []
+
+    for desired_item in all_desired_line_items:
+        desired_name = desired_item['name']
+        if desired_name in existing_items_map:
+            # Item exists, check if quantity needs updating
+            existing_item = existing_items_map[desired_name]
+            if existing_item['quantity'] != desired_item['quantity']:
+                items_to_update.append({
+                    "lineItemId": existing_item['id'],
+                    "quantity": desired_item['quantity']
+                })
+        else:
+            # Item is new
+            items_to_add.append(desired_item)
+
+    # --- New Logic: Step 4 - Execute API Calls ---
+    update_success, update_message = jobber_client.update_line_items_on_quote(quote_id, items_to_update)
+    add_success, add_message = jobber_client.add_line_items_to_quote(quote_id, items_to_add)
+
+    # --- New Logic: Step 5 - Report Results ---
+    final_messages: list[str] = []
+    if not update_success:
+        final_messages.append(f"Update failed: {update_message}")
+    if not add_success:
+        final_messages.append(f"Add failed: {add_message}")
+
+    if final_messages:
+        return jsonify({"error": " | ".join(final_messages)}), 500
     else:
-        return jsonify({"error": message}), 500
+        # Combine success messages for a comprehensive status
+        final_messages.append(update_message)
+        final_messages.append(add_message)
+        return jsonify({"message": " ".join(filter(None, final_messages))})
 
 @app.route('/')
 def home():

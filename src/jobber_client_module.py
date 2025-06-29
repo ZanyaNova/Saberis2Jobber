@@ -163,7 +163,37 @@ class ClientCreateVariablesGQL(TypedDict):
 class ClientObjectGQL(TypedDict): id: str; name: str # Structure of 'client' object in response
 class ClientCreateDataPayloadGQL(TypedDict): client: Optional[ClientObjectGQL]; userErrors: Optional[List[UserError]] # Structure of 'clientCreate' in response data
 
+# --- TypedDicts for Fetching a Quote's Line Items ---
 
+class QuoteLineItemConnectionGQL(TypedDict):
+    nodes: List[QuoteLineItemGQL]
+
+class FullQuoteNodeGQL(TypedDict, total=False):
+    """Represents a single, detailed quote fetched by its ID."""
+    id: str
+    lineItems: QuoteLineItemConnectionGQL
+
+class GetQuoteDataGQL(TypedDict):
+    quote: FullQuoteNodeGQL
+
+class GetQuoteResponseGQL(TypedDict):
+    data: GetQuoteDataGQL
+
+
+# --- TypedDicts for Editing Line Items ---
+class QuoteEditLineItemInputGQL(TypedDict):
+    """Input for updating a single line item."""
+    lineItemId: str
+    quantity: float
+
+class QuoteEditLineItemsVariablesGQL(TypedDict):
+    """Variables for the quoteEditLineItems mutation."""
+    quoteId: str
+    lineItems: List[QuoteEditLineItemInputGQL]
+
+class QuoteEditLineItemsPayloadGQL(TypedDict):
+    """The 'quoteEditLineItems' payload in the response data."""
+    userErrors: Optional[List[UserError]]
 
 
 # ClientCreateResponseDataGQL (Optional - for typing the whole 'data' field for this specific mutation)
@@ -346,26 +376,77 @@ class JobberClient:
             print(f"ERROR: A network request to Jobber API failed for {log_query_identifier} ({error_type_name}): {e}")
             raise
 
+    # --- NEW METHOD ---
+    def get_quote_with_line_items(self, quote_id: str) -> Optional[FullQuoteNodeGQL]:
+        """Fetches a single quote and its line items by ID."""
+        print(f"INFO: Fetching full details for Jobber Quote ID: {quote_id}")
+        query = """
+        query GetQuoteDetails($quoteId: EncodedId!) {
+          quote(id: $quoteId) {
+            id
+            lineItems {
+              nodes {
+                id
+                name
+                quantity
+                unitPrice
+              }
+            }
+          }
+        }
+        """
+        variables = {"quoteId": quote_id}
+        try:
+            raw_data = self._post(query, variables)
+            response = cast(GetQuoteResponseGQL, {"data": raw_data})
+            return response["data"]["quote"]
+        except (ConnectionRefusedError, requests.exceptions.RequestException, RuntimeError) as e:
+            print(f"ERROR: Failed to fetch details for quote {quote_id}: {e}")
+            return None
+
+    # --- NEW METHOD ---
+    def update_line_items_on_quote(self, quote_id: str, line_items: List[QuoteEditLineItemInputGQL]) -> Tuple[bool, str]:
+        """Updates existing line items on a quote."""
+        if not line_items:
+            return True, "No line items needed updating."
+
+        print(f"INFO: Updating {len(line_items)} line item(s) on Jobber Quote ID: {quote_id}")
+        mutation = """
+        mutation QuoteEditLineItems($quoteId: EncodedId!, $lineItems: [QuoteEditLineItemAttributes!]!) {
+          quoteEditLineItems(quoteId: $quoteId, lineItems: $lineItems) {
+            userErrors { message path }
+          }
+        }
+        """
+        variables: QuoteEditLineItemsVariablesGQL = {
+            "quoteId": quote_id,
+            "lineItems": line_items,
+        }
+        try:
+            raw_data = self._post(mutation, variables) # type: ignore
+            response_data = cast(Dict[str, QuoteEditLineItemsPayloadGQL], raw_data)
+            result = response_data["quoteEditLineItems"]
+            user_errors = result.get("userErrors")
+            if user_errors:
+                error_messages = [f"Path: {e.get('path', 'N/A')}, Message: {e.get('message', 'Unknown error')}" for e in user_errors]
+                return False, f"Failed to update line items due to user errors: {'; '.join(error_messages)}"
+            return True, f"Successfully updated {len(line_items)} line item(s)."
+        except (ConnectionRefusedError, requests.exceptions.RequestException, RuntimeError) as e:
+            return False, f"An error occurred while updating line items: {e}"
+
     def add_line_items_to_quote(self, quote_id: str, line_items: List[QuoteLineEditItemGQL]) -> Tuple[bool, str]:
         """
-        Adds line items to an existing Jobber quote with strict typing.
-
-        Args:
-            quote_id: The ID of the quote to add line items to.
-            line_items: A list of line items to add.
-
-        Returns:
-            A tuple containing a boolean indicating success and a status message.
+        Adds NEW line items to an existing Jobber quote.
+        Now checks the 'createdLineItems' field in the response.
         """
-        # Corrected mutation: uses 'lineItems' as a direct argument, not nested under 'input'.
+        if not line_items:
+            return True, "No new line items to add."
+        # ... (mutation definition is the same) ...
         mutation = """
         mutation QuoteCreateLineItems($quoteId: EncodedId!, $lineItems: [QuoteCreateLineItemAttributes!]!) {
           quoteCreateLineItems(quoteId: $quoteId, lineItems: $lineItems) {
-            quote {
+            createdLineItems {
               id
-              lineItems {
-                totalCount
-              }
             }
             userErrors {
               message
@@ -374,7 +455,6 @@ class JobberClient:
           }
         }
         """
-        # Corrected variables: The structure is now flat.
         variables: QuoteCreateLineItemsVariablesGQL = {
             "quoteId": quote_id,
             "lineItems": line_items,
@@ -382,20 +462,20 @@ class JobberClient:
 
         try:
             raw_data: GraphQLData = self._post(mutation, variables) #type:ignore
-            response_data = cast(QuoteCreateLineItemsDataGQL, raw_data)
-
-            result: QuoteCreateLineItemsPayloadGQL = response_data["quoteCreateLineItems"]
+            # The top-level key is 'quoteCreateLineItems'
+            result: Dict[str, Any] = raw_data["quoteCreateLineItems"]
 
             user_errors = result.get("userErrors")
             if user_errors:
                 error_messages = [f"Path: {e.get('path', 'N/A')}, Message: {e.get('message', 'Unknown error')}" for e in user_errors]
                 return False, f"Failed to add line items due to user errors: {'; '.join(error_messages)}"
 
-            quote_data = result.get("quote")
-            if not quote_data or not quote_data.get("id"):
-                return False, "Failed to add line items: API response did not include the updated quote object."
+            # MODIFIED: Check the 'createdLineItems' field as per new documentation.
+            created_items = result.get("createdLineItems")
+            if created_items is None: # It can be an empty list, but not None if the call was successful
+                return False, "Failed to add line items: API response did not include the 'createdLineItems' field."
 
-            success_message = f"Successfully added {len(line_items)} line item(s) to quote {quote_data['id']}."
+            success_message = f"Successfully added {len(created_items)} new line item(s) to quote {quote_id}."
             return True, success_message
 
         except (ConnectionRefusedError, requests.exceptions.RequestException, RuntimeError) as e:
@@ -403,6 +483,7 @@ class JobberClient:
         except (KeyError, TypeError) as e:
             return False, f"An error occurred while parsing the API response: {e}. The response structure may have changed."
 
+   
     def create_client_and_property(self, order: SaberisOrder) -> Tuple[str, str]:
         """Creates a client and then a property for that client in Jobber."""
         client_name_str = order.customer_name.strip() # Get customer name from SaberisOrder
@@ -556,88 +637,6 @@ class JobberClient:
             raise
             
         return client_id, property_id
-
-    def create_quote(self, app_quote_payload: QuoteCreateInput) -> Tuple[Optional[str], str]:
-        """Creates quote in Jobber. Returns (quote_id, status_message)."""
-        quote_id: Optional[str] = None
-        status_message: str = "Quote processing initiated."
-
-        print(f"INFO: Preparing to create quote with title: '{app_quote_payload.title}' for client: {app_quote_payload.client_id}")
-        
-        quote_lines_for_gql: List[QuoteLineItemGQL] = []
-        for li_model in app_quote_payload.line_items:
-            # Transformation from application model (QuoteLineInput) to GQL model (QuoteLineItemGQL)
-            item_gql: QuoteLineItemGQL = {
-                "name": li_model.name,
-                "quantity": li_model.quantity,
-                "unitPrice": li_model.unit_price,
-                "taxable": li_model.taxable,
-                "saveToProductsAndServices": True,
-                "description": li_model.description
-            }
-            if li_model.unit_cost is not None:
-                item_gql["unitCost"] = li_model.unit_cost
-            quote_lines_for_gql.append(item_gql)
-
-        quote_attributes_gql: QuoteCreateAttributesGQL = {
-            "clientId": app_quote_payload.client_id,
-            "propertyId": app_quote_payload.property_id,
-            "title": app_quote_payload.title, 
-            "message": app_quote_payload.message,
-            "lineItems": quote_lines_for_gql
-        }
-
-        variables_create: QuoteCreateVariablesGQL = {"attributes": quote_attributes_gql}
-
-        create_mutation = """
-        mutation QuoteCreate($attributes: QuoteCreateAttributes!) {
-        quoteCreate(attributes: $attributes) { 
-            quote { id quoteNumber quoteStatus } 
-            userErrors { message path } 
-        }
-        }"""
-        
-        try:
-            print(f"INFO: Creating quote with title: '{app_quote_payload.title}' for client: {app_quote_payload.client_id}")
-            raw_data_create: GraphQLData = self._post(create_mutation, variables_create)
-
-            quote_create_payload_dict = raw_data_create.get("quoteCreate")
-            if not isinstance(quote_create_payload_dict, dict):
-                status_message = f"Quote creation response missing 'quoteCreate' key or not a dict. Response: {raw_data_create}"
-                print(f"ERROR: {status_message}")
-                raise RuntimeError(status_message)
-            quote_create_result: QuoteCreateDataPayloadGQL = cast(QuoteCreateDataPayloadGQL, quote_create_payload_dict)
-            
-            user_errors_create = quote_create_result.get("userErrors")
-            if user_errors_create:
-                error_messages = [f"Path: {e.get('path', 'N/A')}, Message: {e.get('message', 'Unknown error')}" for e in user_errors_create]
-                status_message = f"Quote creation failed with user errors: {'; '.join(error_messages)}"
-                print(f"ERROR: {status_message}. Input: {variables_create.get('input', {}).get('title', 'N/A')}")
-                raise RuntimeError(status_message) # No quote_id, raise error
-
-            quote_object = quote_create_result.get("quote")
-            if not quote_object or not quote_object.get("id"): # id is required in QuoteObjectGQL
-                status_message = f"Quote creation response missing quote object or quote ID for title '{app_quote_payload.title}'."
-                print(f"ERROR: {status_message}. Response: {quote_create_result}")
-                raise RuntimeError(status_message)
-
-            quote_id = quote_object["id"]
-            initial_status = quote_object.get('quoteStatus', 'Unknown') # quoteStatus is required in QuoteObjectGQL
-            status_message = f"Quote created (ID: {quote_id}, Status: {initial_status})."
-            print(f"SUCCESS: {status_message} For title: '{app_quote_payload.title}'.")
-            success_message = f"Quote (ID: {quote_id}) sent. New status: {status_message}."
-            return quote_id, success_message
-        
-        except (ConnectionRefusedError, requests.exceptions.RequestException, RuntimeError) as e:
-            # These are errors from _post or local logic during creation
-            status_message = f"Quote creation failed for '{app_quote_payload.title}': {e}"
-            print(f"ERROR: {status_message}")
-            return None, status_message # Return None for quote_id and the error message
-        
-        except Exception as e: # Other unexpected errors during creation
-            status_message = f"Unexpected error creating quote '{app_quote_payload.title}': {e}"
-            print(f"ERROR: {status_message}")
-            return None, status_message
     
     def get_approved_quotes(self, cursor: Optional[str] = None) -> QuotePageGQL:
         """
@@ -713,3 +712,88 @@ class JobberClient:
         except (ConnectionRefusedError, requests.exceptions.RequestException, RuntimeError) as e:
             print(f"ERROR: Failed to fetch approved quotes from Jobber: {e}")
             raise
+    
+    # UNUSED, but helpful if we ever decide to automate quote creation
+    def create_quote(self, app_quote_payload: QuoteCreateInput) -> Tuple[Optional[str], str]:
+        """Creates quote in Jobber. Returns (quote_id, status_message)."""
+        quote_id: Optional[str] = None
+        status_message: str = "Quote processing initiated."
+
+        print(f"INFO: Preparing to create quote with title: '{app_quote_payload.title}' for client: {app_quote_payload.client_id}")
+        
+        quote_lines_for_gql: List[QuoteLineItemGQL] = []
+        for li_model in app_quote_payload.line_items:
+            # Transformation from application model (QuoteLineInput) to GQL model (QuoteLineItemGQL)
+            item_gql: QuoteLineItemGQL = {
+                "id": "test_id",
+                "name": li_model.name,
+                "quantity": li_model.quantity,
+                "unitPrice": li_model.unit_price,
+                "taxable": li_model.taxable,
+                "saveToProductsAndServices": True,
+                "description": li_model.description,
+                "unitCost": -1
+            }
+            if li_model.unit_cost is not None:
+                item_gql["unitCost"] = li_model.unit_cost
+            quote_lines_for_gql.append(item_gql)
+
+        quote_attributes_gql: QuoteCreateAttributesGQL = {
+            "clientId": app_quote_payload.client_id,
+            "propertyId": app_quote_payload.property_id,
+            "title": app_quote_payload.title, 
+            "message": app_quote_payload.message,
+            "lineItems": quote_lines_for_gql
+        }
+
+        variables_create: QuoteCreateVariablesGQL = {"attributes": quote_attributes_gql}
+
+        create_mutation = """
+        mutation QuoteCreate($attributes: QuoteCreateAttributes!) {
+        quoteCreate(attributes: $attributes) { 
+            quote { id quoteNumber quoteStatus } 
+            userErrors { message path } 
+        }
+        }"""
+        
+        try:
+            print(f"INFO: Creating quote with title: '{app_quote_payload.title}' for client: {app_quote_payload.client_id}")
+            raw_data_create: GraphQLData = self._post(create_mutation, variables_create)
+
+            quote_create_payload_dict = raw_data_create.get("quoteCreate")
+            if not isinstance(quote_create_payload_dict, dict):
+                status_message = f"Quote creation response missing 'quoteCreate' key or not a dict. Response: {raw_data_create}"
+                print(f"ERROR: {status_message}")
+                raise RuntimeError(status_message)
+            quote_create_result: QuoteCreateDataPayloadGQL = cast(QuoteCreateDataPayloadGQL, quote_create_payload_dict)
+            
+            user_errors_create = quote_create_result.get("userErrors")
+            if user_errors_create:
+                error_messages = [f"Path: {e.get('path', 'N/A')}, Message: {e.get('message', 'Unknown error')}" for e in user_errors_create]
+                status_message = f"Quote creation failed with user errors: {'; '.join(error_messages)}"
+                print(f"ERROR: {status_message}. Input: {variables_create.get('input', {}).get('title', 'N/A')}")
+                raise RuntimeError(status_message) # No quote_id, raise error
+
+            quote_object = quote_create_result.get("quote")
+            if not quote_object or not quote_object.get("id"): # id is required in QuoteObjectGQL
+                status_message = f"Quote creation response missing quote object or quote ID for title '{app_quote_payload.title}'."
+                print(f"ERROR: {status_message}. Response: {quote_create_result}")
+                raise RuntimeError(status_message)
+
+            quote_id = quote_object["id"]
+            initial_status = quote_object.get('quoteStatus', 'Unknown') # quoteStatus is required in QuoteObjectGQL
+            status_message = f"Quote created (ID: {quote_id}, Status: {initial_status})."
+            print(f"SUCCESS: {status_message} For title: '{app_quote_payload.title}'.")
+            success_message = f"Quote (ID: {quote_id}) sent. New status: {status_message}."
+            return quote_id, success_message
+        
+        except (ConnectionRefusedError, requests.exceptions.RequestException, RuntimeError) as e:
+            # These are errors from _post or local logic during creation
+            status_message = f"Quote creation failed for '{app_quote_payload.title}': {e}"
+            print(f"ERROR: {status_message}")
+            return None, status_message # Return None for quote_id and the error message
+        
+        except Exception as e: # Other unexpected errors during creation
+            status_message = f"Unexpected error creating quote '{app_quote_payload.title}': {e}"
+            print(f"ERROR: {status_message}")
+            return None, status_message
