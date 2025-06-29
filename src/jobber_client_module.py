@@ -572,7 +572,7 @@ class JobberClient:
                 "quantity": li_model.quantity,
                 "unitPrice": li_model.unit_price,
                 "taxable": li_model.taxable,
-                "saveToProductsAndServices": False,
+                "saveToProductsAndServices": True,
                 "description": li_model.description
             }
             if li_model.unit_cost is not None:

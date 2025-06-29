@@ -90,6 +90,7 @@ class QuoteLineEditItemGQL(TypedDict):
     description: Optional[str]
     unitCost: Optional[float]
     taxable: bool
+    saveToProductsAndServices: bool
 
 class QuoteLineItemGQL(TypedDict, total=False):
     name: str  # Required
@@ -426,7 +427,8 @@ def get_line_items_from_export(stored_path: str, ui_quantity: int) -> List[Quote
             "unitPrice": li.cost, # Using Saberis cost as the unit price
             "description": jobber_description,
             "unitCost": li.cost if li.cost > 0 else None,
-            "taxable": False
+            "taxable": False,
+            "saveToProductsAndServices": True,
         }
         jobber_lines.append(line_item)
 
