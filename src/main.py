@@ -14,10 +14,46 @@ app = Flask(__name__)
 # Secret key is needed for session management (to store OAuth state)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(24))
 
+
+
+# ---------------------------------------------------------------------------
+# Data Transformation
+# ---------------------------------------------------------------------------
+
+
+
+
+def _transform_quote_for_ui(quote_node: QuoteNodeGQL) -> Dict[str, Any]:
+    """Transforms a detailed QuoteNodeGQL object into a simple dict for the UI."""
+    shipping_address = "Address not available"
+    property_data = quote_node.get("property")
+    if property_data:
+        address_data = property_data.get("address", {})
+        parts = [
+            address_data.get("street1"),
+            address_data.get("city"),
+            address_data.get("province")
+        ]
+        address_str = ", ".join(filter(None, parts))
+        if address_data.get("postalCode"):
+            address_str += f" {address_data.get('postalCode')}"
+        if address_str:
+            shipping_address = address_str
+
+    total = quote_node.get("amounts", {}).get("total", 0.0)
+
+    return {
+        "id": quote_node["id"],
+        "client_name": quote_node["client"]["name"],
+        "shipping_address": shipping_address,
+        "total": f"${total:,.2f}",
+        "approved_date": quote_node["transitionedAt"].split('T')[0]
+    }
+
+
 # ---------------------------------------------------------------------------
 # Flask Web Routes
 # ---------------------------------------------------------------------------
-
 
 @app.route('/api/jobber-quotes')
 def get_jobber_quotes():
@@ -154,37 +190,3 @@ if __name__ == "__main__":
             print(f"Defaulting to http://localhost:{flask_port}/jobber/callback for now. Please set it in your .env file.")
             os.environ["JOBBER_REDIRECT_URI"] = f"http://localhost:{flask_port}/jobber/callback"
         app.run(debug=True, port=flask_port, use_reloader=False)
-
-# ---------------------------------------------------------------------------
-# Data Transformation
-# ---------------------------------------------------------------------------
-
-
-
-
-def _transform_quote_for_ui(quote_node: QuoteNodeGQL) -> Dict[str, Any]:
-    """Transforms a detailed QuoteNodeGQL object into a simple dict for the UI."""
-    shipping_address = "Address not available"
-    property_data = quote_node.get("property")
-    if property_data:
-        address_data = property_data.get("address", {})
-        parts = [
-            address_data.get("street1"),
-            address_data.get("city"),
-            address_data.get("province")
-        ]
-        address_str = ", ".join(filter(None, parts))
-        if address_data.get("postalCode"):
-            address_str += f" {address_data.get('postalCode')}"
-        if address_str:
-            shipping_address = address_str
-
-    total = quote_node.get("amounts", {}).get("total", 0.0)
-
-    return {
-        "id": quote_node["id"],
-        "client_name": quote_node["client"]["name"],
-        "shipping_address": shipping_address,
-        "total": f"${total:,.2f}",
-        "approved_date": quote_node["transitionedAt"].split('T')[0]
-    }
