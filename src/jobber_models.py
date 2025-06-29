@@ -404,29 +404,32 @@ def get_line_items_from_export(stored_path: str, ui_quantity: int) -> List[Quote
         if li.type != "Product":
             continue
 
-        # Construct the Jobber line item NAME
-        product_name_parts = [
+        # Construct the Jobber line item name and full description string
+        base_name_parts = [
             li.catalog,
             remove_curly_braces_and_content(li.description)
         ]
-
-        # Construct the Jobber line item DESCRIPTION
         description_parts: list[str] = []
-
         for key, value in li.attributes.items():
             description_parts.append(f"{key}: {value}")
             if key in FIELDs_TO_PUT_IN_TITLE:
-                product_name_parts.append(value)
+                base_name_parts.append(value)
 
-        # REMOVED: The unique line ID is no longer needed in the name
-        # product_name_parts.append(f"ref-L{li.line_id}")
-
-        product_name = " | ".join(filter(None, product_name_parts))
+        base_product_name = " | ".join(filter(None, base_name_parts))
         jobber_description = "\n".join(description_parts)
 
-        # Create the GQL object for the Jobber Client
+        # 2. Create a unique signature and generate a short hash
+        # The signature includes the base name and all descriptive attributes
+        signature_str = f"{base_product_name}{jobber_description}"
+        hash_object = hashlib.md5(signature_str.encode('utf-8'))
+        short_hash = hash_object.hexdigest()[:6]
+
+        # 3. Combine them into the final name
+        final_product_name = f"{base_product_name} | S2J({short_hash})"
+
+        # 4. Create the final GQL object
         line_item: QuoteLineEditItemGQL = {
-            "name": product_name,
+            "name": final_product_name,
             "quantity": li.quantity * ui_quantity,
             "unitPrice": li.cost,
             "description": jobber_description,
