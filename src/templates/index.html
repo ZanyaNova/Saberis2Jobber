@@ -4,23 +4,36 @@
 <div x-data="saberisDashboard()" x-init="init()">
     
     <div class="container">
-        <p>
-            <button @click="refreshExports()" :disabled="isLoading">
-                <span x-show="!isLoading">Refresh Saberis Exports</span>
-                <span x-show="isLoading" aria-busy="true">Refreshing...</span>
-            </button>
-        </p>
 
         <div class="grid">
             
             <section>
                 <h2>1. Select Jobber Quote</h2>
+
+                <article x-show="authorizationError" class="auth-error-card">
+                    <h4>Authorization Required</h4>
+                    <p>Could not connect to Jobber. Your authorization may have expired.</p>
+                    <footer>
+                        <a href="{{ url_for('authorize_jobber_route') }}" role="button" class="contrast">
+                            Re-authorize with Jobber
+                        </a>
+                    </footer>
+                </article>
+
                 <template x-for="quote in jobberQuotes" :key="quote.id">
                     <article @click="selectedQuoteId = quote.id" :class="{ 'selected-card': selectedQuoteId === quote.id }" style="cursor: pointer;">
                         <h4 x-text="quote.client_name"></h4>
                         <p x-text="quote.shipping_address"></p>
                     </article>
                 </template>
+
+                <div x-show="hasNextPage && !authorizationError">
+                    <button @click="fetchJobberQuotes()" :disabled="isLoadingQuotes">
+                        <span x-show="!isLoadingQuotes">Load More...</span>
+                        <span x-show="isLoadingQuotes" aria-busy="true">Loading...</span>
+                    </button>
+                </div>
+
             </section>
 
             <section :class="selectedQuoteId ? 'content-visible' : 'content-hidden'">
@@ -81,6 +94,12 @@
     aside {
         padding-left: var(--pico-spacing);
     }
+    .auth-error-card {
+        border-left-width: 0.5rem;
+        border-left-style: solid;
+        border-color: var(--pico-form-element-invalid-border-color);
+        background-color: var(--pico-card-background-color);
+    }
 </style>
 
 <script>
@@ -88,7 +107,15 @@
         return {
             // State
             isLoading: false,
+            isLoadingQuotes: false,
+            
+            // Jobber
+            authorizationError: false,
             jobberQuotes: [],
+            nextCursor: null,
+            hasNextPage: false,
+
+            // Saberis
             saberisExports: [],
             selectedQuoteId: null,
             selectedExportIds: [],
@@ -101,9 +128,40 @@
             },
             
             async fetchJobberQuotes() {
-                // This will eventually fetch from the real Jobber API
-                const response = await fetch('/api/jobber-quotes');
-                this.jobberQuotes = await response.json();
+                if (this.isLoadingQuotes) return;
+                this.isLoadingQuotes = true;
+                this.authorizationError = false; 
+
+                const url = this.nextCursor 
+                    ? `/api/jobber-quotes?cursor=${this.nextCursor}`
+                    : '/api/jobber-quotes';
+
+                try {
+                    const response = await fetch(url);
+                    
+                    if (response.status === 401) {
+                        this.authorizationError = true;
+                        return; // Stop processing
+                    }
+                    
+                    if (!response.ok) {
+                        throw new Error(`Failed to fetch quotes: ${response.statusText}`);
+                    }
+
+                    const data = await response.json();
+                    
+                    this.jobberQuotes = [...this.jobberQuotes, ...data.quotes];
+                    this.nextCursor = data.next_cursor;
+                    this.hasNextPage = data.has_next_page;
+
+                } catch (error) {
+                    console.error("Error fetching Jobber quotes:", error);
+                    if (!this.authorizationError) {
+                         alert("Could not load Jobber quotes. Please check the console for non-authorization errors.");
+                    }
+                } finally {
+                    this.isLoadingQuotes = false;
+                }
             },
 
             async refreshExports() {
@@ -126,7 +184,6 @@
                 if (this.selectedExportIds.length === 0) {
                     return false;
                 }
-                // Check if EVERY selected export has a valid quantity.
                 return this.selectedExportIds.every(id => this.getQuantityFor(id));
             },
 
@@ -136,7 +193,6 @@
                     return;
                 }
                 alert('Sending to Jobber...');
-                // TODO: Implement the actual API call
                 console.log({
                     quoteId: this.selectedQuoteId,
                     exports: this.selectedExportIds.map(id => ({

@@ -26,6 +26,62 @@ class GraphQLResponseWrapper(TypedDict):
     errors: Optional[List[GraphQLErrorDetail]]
 class UserError(TypedDict): message: str; path: List[Union[str, int]] # Jobber's userError structure
 
+
+# --- Structures for Approved Quote Query ---
+
+class AddressGQL(TypedDict, total=False):
+    street1: Optional[str]
+    city: Optional[str]
+    province: Optional[str]
+    postalCode: Optional[str]
+
+class PropertyGQL(TypedDict, total=False):
+    id: str
+    address: AddressGQL
+
+class ClientGQL(TypedDict):
+    id: str
+    name: str
+
+class QuoteAmountsGQL(TypedDict, total=False):
+    total: float
+
+class QuoteNodeGQL(TypedDict):
+    id: str
+    quoteNumber: str
+    title: Optional[str]
+    transitionedAt: str # ISO 8601 string
+    client: ClientGQL
+    property: Optional[PropertyGQL] # Property can be null
+    amounts: QuoteAmountsGQL
+
+class QuoteEdgeGQL(TypedDict):
+    cursor: str
+    node: QuoteNodeGQL
+
+class PageInfoGQL(TypedDict):
+    hasNextPage: bool
+
+class QuotesConnectionGQL(TypedDict):
+    edges: List[QuoteEdgeGQL]
+    pageInfo: PageInfoGQL
+    totalCount: int
+
+class QuotesDataGQL(TypedDict):
+    quotes: QuotesConnectionGQL
+
+class GetQuotesResponseGQL(TypedDict):
+    data: QuotesDataGQL
+
+class QuotePageGQL(TypedDict):
+    """
+    Represents a single 'page' of quotes returned from the API,
+    along with the necessary information to fetch the next page.
+    """
+    quotes: List[QuoteNodeGQL]
+    next_cursor: Optional[str]
+    has_next_page: bool
+
 # --- Client Creation GQL TypedDicts ---
 class ClientEmailInputGQL(TypedDict, total=False):
     address: str # Assuming 'address' corresponds to the email string
@@ -134,8 +190,7 @@ class QuoteCreateAttributesGQL(TypedDict, total=False):
 class QuoteCreateVariablesGQL(TypedDict): attributes: QuoteCreateAttributesGQL
 class QuoteObjectGQL(TypedDict): id: str; quoteNumber: Optional[str]; quoteStatus: str # Structure of 'quote' object
 class QuoteCreateDataPayloadGQL(TypedDict): quote: Optional[QuoteObjectGQL]; userErrors: Optional[List[UserError]] # Structure of 'quoteCreate' in response data
-# QuoteCreateResponseDataGQL (Optional)
-# class QuoteCreateResponseDataGQL(TypedDict): quoteCreate: Optional[QuoteCreateDataPayloadGQL]
+
 
 
 # General type for variables passed to _post; can be expanded with more specific variable types
@@ -303,17 +358,6 @@ class JobberClient:
                 client_mutation_input_gql["lastName"] = "Unknown" # Jobber usually appreciates a lastName
                 client_mutation_input_gql["firstName"] = "Client" # Placeholder
             client_mutation_input_gql["isCompany"] = False
-
-
-        # Example: Set default communication preferences (optional)
-        # client_mutation_input_gql["receivesQuoteFollowUps"] = True
-
-        # TODO: Map SaberisOrder's email/phone to ClientEmailInputGQL/ClientPhoneInputGQL if available
-        # For example:
-        # if hasattr(order, 'contact_email') and order.contact_email: # Assuming SaberisOrder might have these
-        #     client_mutation_input_gql["emails"] = [{"address": order.contact_email, "primary": True}]
-        # if hasattr(order, 'contact_phone') and order.contact_phone:
-        #     client_mutation_input_gql["phones"] = [{"number": order.contact_phone, "primary": True, "type": "mobile"}]
 
         client_variables: ClientCreateVariablesGQL = {"input": client_mutation_input_gql}
         client_id: str
@@ -506,3 +550,78 @@ class JobberClient:
             status_message = f"Unexpected error creating quote '{app_quote_payload.title}': {e}"
             print(f"ERROR: {status_message}")
             return None, status_message
+    
+    def get_approved_quotes(self, cursor: Optional[str] = None) -> QuotePageGQL:
+        """
+        Fetches a single page of approved quotes from Jobber.
+
+        Args:
+            cursor: The cursor for the page to retrieve. If None, retrieves the first page.
+
+        Returns:
+            A QuotePageGQL dictionary containing the list of quotes for the page
+            and pagination info (next_cursor, has_next_page).
+        
+        Raises:
+            RuntimeError: If the API call fails or returns an unexpected structure.
+        """
+        log_message = f"Fetching a page of approved quotes starting from cursor: {cursor}" if cursor else "Fetching first page of approved quotes."
+        print(f"INFO: {log_message}")
+
+        query = """
+        query GetApprovedQuotes($cursor: String) {
+          quotes(first: 50, after: $cursor, filter: { status: approved }) {
+            edges {
+              cursor
+              node {
+                id
+                quoteNumber
+                title
+                transitionedAt
+                client { id name }
+                property { id address { street1 city province postalCode } }
+                amounts { total }
+              }
+            }
+            pageInfo {
+              hasNextPage
+            }
+          }
+        }
+        """
+        variables = {"cursor": cursor} if cursor else {}
+
+        try:
+            raw_response: GraphQLData = self._post(query, variables)
+            gql_response = cast(GetQuotesResponseGQL, {"data": raw_response})
+            
+            quotes_connection = gql_response.get("data", {}).get("quotes")
+            if not quotes_connection:
+                raise RuntimeError("API response missing 'quotes' connection.")
+
+            # Extract the list of quotes from the edges
+            quotes_on_page: List[QuoteNodeGQL] = [
+                edge["node"] for edge in quotes_connection.get("edges", []) if edge and "node" in edge
+            ]
+
+            # Determine pagination status
+            page_info = quotes_connection.get("pageInfo", {})
+            has_next_page = page_info.get("hasNextPage", False)
+            
+            next_cursor: Optional[str] = None
+            edges = quotes_connection.get("edges", [])
+            if has_next_page and edges:
+                # The cursor for the *next* page is the cursor of the *last* item on this page
+                next_cursor = edges[-1].get("cursor")
+
+            print(f"SUCCESS: Retrieved {len(quotes_on_page)} approved quotes. has_next_page: {has_next_page}")
+
+            return {
+                "quotes": quotes_on_page,
+                "next_cursor": next_cursor,
+                "has_next_page": has_next_page,
+            }
+
+        except (ConnectionRefusedError, requests.exceptions.RequestException, RuntimeError) as e:
+            print(f"ERROR: Failed to fetch approved quotes from Jobber: {e}")
+            raise

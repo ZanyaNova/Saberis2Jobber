@@ -6,7 +6,8 @@ from .saberis_ingestion import ingest_saberis_exports
 
 # Auth and Config
 from .jobber_auth_flow import get_authorization_url, exchange_code_for_token, get_valid_access_token, verify_state_parameter
-
+from .jobber_client_module import JobberClient, QuoteNodeGQL
+from typing import Dict, Any
 
 # Flask App Initialization
 app = Flask(__name__)
@@ -21,26 +22,39 @@ app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(24))
 @app.route('/api/jobber-quotes')
 def get_jobber_quotes():
     """
-    API endpoint to serve a MOCK list of approved Jobber quotes.
-    In the future, this will fetch real data from the Jobber API.
+    API endpoint to serve a list of approved Jobber quotes.
+    Supports pagination via a 'cursor' query parameter.
     """
-    mock_quotes = [
-        {
-            "id": "quote_123",
-            "client_name": "Affinity",
-            "shipping_address": "552 Wilcox Ln, Corvallis, MT",
-            "total": "5,842.00",
-            "approved_date": "2025-06-15"
-        },
-        {
-            "id": "quote_456",
-            "client_name": "Burnich",
-            "shipping_address": "123 Main St, Anytown, USA",
-            "total": "12,300.50",
-            "approved_date": "2025-06-12"
-        }
-    ]
-    return jsonify(mock_quotes)
+    # Check for authorization first
+    if get_valid_access_token() is None:
+        return jsonify({"error": "Not authorized with Jobber"}), 401
+
+    jobber_client = JobberClient()
+    cursor = request.args.get('cursor', None) # Get cursor from query params
+
+    try:
+        # Fetch a page of quotes using our new method
+        quote_page = jobber_client.get_approved_quotes(cursor=cursor)
+        
+        # Transform each quote for the UI
+        transformed_quotes = [
+            _transform_quote_for_ui(quote) for quote in quote_page["quotes"]
+        ]
+        
+        # Return the transformed data along with pagination info
+        return jsonify({
+            "quotes": transformed_quotes,
+            "next_cursor": quote_page["next_cursor"],
+            "has_next_page": quote_page["has_next_page"]
+        })
+    except ConnectionRefusedError as e:
+        print(f"AUTH_ERROR in endpoint: {e}")
+        return jsonify({"error": str(e)}), 401
+
+    except Exception as e:
+        # If the client raises an error (e.g., connection issue, API error), return it
+        print(f"ERROR: Could not fetch Jobber quotes: {e}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/saberis-exports')
 def get_saberis_exports():
@@ -140,3 +154,37 @@ if __name__ == "__main__":
             print(f"Defaulting to http://localhost:{flask_port}/jobber/callback for now. Please set it in your .env file.")
             os.environ["JOBBER_REDIRECT_URI"] = f"http://localhost:{flask_port}/jobber/callback"
         app.run(debug=True, port=flask_port, use_reloader=False)
+
+# ---------------------------------------------------------------------------
+# Data Transformation
+# ---------------------------------------------------------------------------
+
+
+
+
+def _transform_quote_for_ui(quote_node: QuoteNodeGQL) -> Dict[str, Any]:
+    """Transforms a detailed QuoteNodeGQL object into a simple dict for the UI."""
+    shipping_address = "Address not available"
+    property_data = quote_node.get("property")
+    if property_data:
+        address_data = property_data.get("address", {})
+        parts = [
+            address_data.get("street1"),
+            address_data.get("city"),
+            address_data.get("province")
+        ]
+        address_str = ", ".join(filter(None, parts))
+        if address_data.get("postalCode"):
+            address_str += f" {address_data.get('postalCode')}"
+        if address_str:
+            shipping_address = address_str
+
+    total = quote_node.get("amounts", {}).get("total", 0.0)
+
+    return {
+        "id": quote_node["id"],
+        "client_name": quote_node["client"]["name"],
+        "shipping_address": shipping_address,
+        "total": f"${total:,.2f}",
+        "approved_date": quote_node["transitionedAt"].split('T')[0]
+    }
