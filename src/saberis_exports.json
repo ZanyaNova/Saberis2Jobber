@@ -20,5 +20,16 @@
         "username": "KiahHochstetler",
         "shipping_address": "552 Wilcox Ln, Corvallis, MT",
         "sent_to_jobber": false
+    },
+    {
+        "saberis_id": "bab6bc1a-281a-4f04-be57-87a28b58eb63",
+        "original_filename": "example3.json",
+        "stored_path": "C:\\Coding Projects\\Kiah\\Saberis2Jobber\\src\\processed_exports\\bab6bc1a-281a-4f04-be57-87a28b58eb63.json",
+        "ingested_at": "2025-07-01T15:59:43.182988",
+        "export_date": "2025.07.01",
+        "customer_name": "",
+        "username": "KiahHochstetler",
+        "shipping_address": "",
+        "sent_to_jobber": false
     }
 ]
