@@ -104,7 +104,7 @@
             <div class="grid">
 
                 <section>
-                    <h2>2. Select Design(s) & Qty</h2>
+                    <h2>1. Select Design(s) & Qty</h2>
                     <template x-for="exportItem in saberisExports" :key="exportItem.saberis_id">
                         
                         <article 
@@ -142,7 +142,7 @@
                 </section>
 
                 <section>
-                    <h2>2. Catalogue Mark-up</h2>
+                    <h2>2. Set Catalogue Mark-up</h2>
                     <p><i>(Catalogue list and editable mark-up fields will go here)</i></p>
                 </section>
 
@@ -317,6 +317,10 @@
                 } finally {
                     this.isSending = false;
                 }
+            },
+
+            isReadyToSetMarkup(){
+                return false
             },
 
         };
