@@ -191,6 +191,7 @@ class SaberisOrder:
     shipping_address: ShippingAddress
     total_volume: int = 0
     total_cost: float = 0.0
+    catalogues: set[str] = set()
     lines: List[SaberisLineItem] = field(default_factory=list) #type: ignore
 
     @classmethod
@@ -241,6 +242,7 @@ class SaberisOrder:
         # Process the unified list of raw line items
         cumulative_volume: int = 0
         cumulative_cost: float = 0.0
+        cumulative_catalogues: set[str] = set()
 
         for raw_item_dict in raw_lines_list:
             if not raw_item_dict:
@@ -261,6 +263,7 @@ class SaberisOrder:
 
                     if key == "Catalog":
                         context[key] = get_brand_if_available(value)
+                        cumulative_catalogues.add(value)
                     else:
                         context[key] = value
 
@@ -283,6 +286,7 @@ class SaberisOrder:
             lines=processed_lines,
             total_volume=cumulative_volume,
             total_cost=cumulative_cost,
+            catalogues=cumulative_catalogues,
         )
 
     def first_catalog_code(self) -> str:
