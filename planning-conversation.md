@@ -52,9 +52,9 @@ Content & Behavior:
 "Send Items to Jobber Quote" Button: A large, primary action button. It is the main call to action.
 "Configure Surcharges" Button: A secondary button located near the "Send" button. Clicking this does not submit the form but instead reveals the Surcharge Panel directly below it.
 The Surcharge Panel (Initially Hidden):
-Default Surcharge Field: A number input at the top labeled "Default Surcharge %". Changing this value will dynamically update any catalogue fields below that haven't been manually edited.
-Catalogue List: A unique, alphabetized list of all cabinet catalogues from the currently selected Saberis exports. Each item has:
-The Catalogue Name (e.g., "KWP_24C1").
+Default Surcharge Field: A number input at the top labeled "Default Surcharge %". Changing this value will dynamically update any catalog fields below that haven't been manually edited.
+catalog List: A unique, alphabetized list of all cabinet catalogs from the currently selected Saberis exports. Each item has:
+The catalog Name (e.g., "KWP_24C1").
 A number input field for its specific surcharge, pre-populated with the default value.
 Pushback, Simplifications, and Standard Practices
 You asked for thoughts on this design. Here are some considerations based on standard UI practices.
