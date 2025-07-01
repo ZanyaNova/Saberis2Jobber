@@ -1,7 +1,9 @@
 from gspread import Worksheet, Cell
 from .sheet_logging import add_sheet_log
-from .gsheet_config import GSHEET_RECORDSHEET, GSHEET_BRANDSHEET
+from .gsheet_config import GSHEET_RECORDSHEET, GSHEET_BRANDSHEET, GSHEET_MARKUP
 from typing import Final
+
+DEFAULT_MARKUP: float = 0.035
 
 def get_client_id(saberis_id: str) -> str:
 
@@ -58,8 +60,36 @@ def get_brand_if_available(catalog_id: str) -> str:
     GSHEET_RECORDSHEET.update_cell(new_row_index, CATALOG_ID_COLUMN_INDEX, catalog_id)
     return catalog_id
 
+def get_brand_or_catalog_markup(catalog_or_brand: str) -> float:
+    """
+    Finds the markup for a given catalog or brand name.
 
-def get_adjacent_value(sheet: Worksheet, search_value: str) -> str | None:
+    Searches the first two columns for the identifier and returns the
+    corresponding markup from the third column. If not found or if the
+    markup is invalid, returns the default markup.
+    """
+    try:
+        found_cell: Cell | None = GSHEET_MARKUP.find(catalog_or_brand) # type: ignore
+
+        if found_cell is None or found_cell.col > 2:
+            return DEFAULT_MARKUP
+
+        markup_value_str = GSHEET_MARKUP.cell(found_cell.row, 3).value
+
+        if markup_value_str:
+            markup = float(markup_value_str)
+            # Return the found markup if it's a positive number, otherwise default.
+            return markup if markup > 0 else DEFAULT_MARKUP
+
+    except (ValueError, TypeError):
+        # Catches errors if the cell value is not a valid number (e.g., "N/A").
+        print(f"Warning: Invalid markup value found for '{catalog_or_brand}'. Using default.")
+        pass
+    
+    return DEFAULT_MARKUP
+
+
+def get_adjacent_value(sheet: Worksheet, search_value: str, columns_over: int = 1) -> str | None:
     """
     Finds a cell with search_value and returns the string value of the cell
     to its right. Returns None if search_value is not found or the adjacent
@@ -74,14 +104,10 @@ def get_adjacent_value(sheet: Worksheet, search_value: str) -> str | None:
     # If found_cell is not None, it's a gspread.Cell object.
     # Accessing .row and .col is safe here.
     # The .value of a cell can be str, int, float, bool, or None if the cell is empty.
-    adjacent_cell_value = sheet.cell(found_cell.row, found_cell.col + 1).value
+    adjacent_cell_value = sheet.cell(found_cell.row, found_cell.col + columns_over).value
 
     if adjacent_cell_value is None:
         return None
 
     # Ensure the function returns a string if a non-None value was found.
     return str(adjacent_cell_value)
-
-
-
-get_client_id("KiahsBestClient46")

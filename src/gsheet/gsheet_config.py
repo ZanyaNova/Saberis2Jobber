@@ -46,7 +46,7 @@ except Exception as e:
         f"Original error: {e}"
     ) from e
 
-RECORD_SHEET_NAME: Final[str] = "SaberisToJobberID"  # Define the sheet name as a constant
+RECORD_SHEET_NAME: Final[str] = "SaberisToJobberID"  
 
 try:
     GSHEET_RECORDSHEET: Final[Worksheet] = GSHEET_WORKBOOK.worksheet(RECORD_SHEET_NAME)
@@ -102,7 +102,7 @@ if not (0 <= LOG_PRIORITY_THRESHOLD <= 5):
         "between 0 and 5 (inclusive)."
     )
 
-# --- Open Workbook and Specific Worksheet: Log ---
+# --- Open Workbook and Specific Worksheet: Brand ---
 BRAND_SHEET_NAME: Final[str] = "CatalogToBrand"  # Define the sheet name as a constant
 
 try:
@@ -117,3 +117,7 @@ except Exception as e:
         f"An unexpected error occurred while trying to access worksheet '{BRAND_SHEET_NAME}'. "
         f"Original error: {e}"
     ) from e
+
+# --- Open Workbook and Specific Worksheet: Markup ---
+MARKUP_SHEET_NAME: Final[str] = "Markup"  
+GSHEET_MARKUP = GSHEET_BRANDSHEET
