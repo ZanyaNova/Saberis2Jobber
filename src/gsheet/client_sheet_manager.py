@@ -2,8 +2,8 @@ from gspread import Worksheet, Cell
 from .gsheet_config import GSHEET_RECORDSHEET, GSHEET_BRANDSHEET, GSHEET_MARKUP
 from typing import Final
 
-DEFAULT_MARKUP: float = 0.035
-MARKUP_ROW_INDEX: int = 3
+DEFAULT_MARKUP: Final[float] = 0.035
+MARKUP_ROW_INDEX: Final[int] = 3
 
 def get_brand_if_available(catalog_id: str) -> str:
     """
@@ -106,7 +106,6 @@ def get_adjacent_value(sheet: Worksheet, search_value: str, columns_over: int = 
         return None
 
     # If found_cell is not None, it's a gspread.Cell object.
-    # Accessing .row and .col is safe here.
     # The .value of a cell can be str, int, float, bool, or None if the cell is empty.
     adjacent_cell_value = sheet.cell(found_cell.row, found_cell.col + columns_over).value
 
