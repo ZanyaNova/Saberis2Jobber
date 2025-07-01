@@ -1,41 +1,8 @@
 from gspread import Worksheet, Cell
-from .sheet_logging import add_sheet_log
 from .gsheet_config import GSHEET_RECORDSHEET, GSHEET_BRANDSHEET, GSHEET_MARKUP
 from typing import Final
 
 DEFAULT_MARKUP: float = 0.035
-
-def get_client_id(saberis_id: str) -> str:
-
-    jobber_id = get_adjacent_value(GSHEET_RECORDSHEET, saberis_id)
-
-    if jobber_id == "" or jobber_id is None:
-        print('No record found for', saberis_id)
-        # call jobber createClient api and retun that instead.
-
-        placeholder_jobber_id = saberis_id + '_fake_jobber_id'
-        print ('NOT PRODUCTION READY: using fake jobber ID, need to create a client and get the real one')
-        SABERIS_COLUMN_INDEX: Final[int] = 1
-        JOBBER_COLUMN_INDEX: Final[int] = SABERIS_COLUMN_INDEX + 1
-
-        saberis_column_values = GSHEET_RECORDSHEET.col_values(SABERIS_COLUMN_INDEX)
-
-        new_row_index = len(saberis_column_values) + 1
-
-        GSHEET_RECORDSHEET.update_cell(new_row_index, SABERIS_COLUMN_INDEX, saberis_id)
-        GSHEET_RECORDSHEET.update_cell(new_row_index, JOBBER_COLUMN_INDEX, placeholder_jobber_id)
-
-        print('New jobber ID created: ', placeholder_jobber_id)
-
-        log_message = f'No entry found for {saberis_id}. Successfully created new Jobber client ID: {placeholder_jobber_id}'
-
-        add_sheet_log(0, 'client_sheet_manager', log_message)
-
-        return placeholder_jobber_id
-    
-    print('Succcess! Jobber ID for', saberis_id, 'is', jobber_id)
-    return jobber_id
-
 
 def get_brand_if_available(catalog_id: str) -> str:
     """
