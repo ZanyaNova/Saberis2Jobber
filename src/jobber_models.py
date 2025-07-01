@@ -142,7 +142,7 @@ class SaberisLineItem:
     uom: Optional[str] = None
     manufacturer_part_number: Optional[str] = None
     manufacturer_sku: Optional[str] = None
-    volume: Optional[str] = None
+    volume: int = 0
     weight: Optional[str] = None
     product_type_saberis: Optional[str] = None
 
@@ -163,7 +163,7 @@ class SaberisLineItem:
         popped_context = context_copy.pop("Catalog", None)
 
         # Create the base object with data from the line item itself
-        item = SaberisLineItem(
+        return SaberisLineItem(
             type="Product",
             catalog = popped_context or "Unknown Catalog",
             attributes= context_copy,
@@ -177,13 +177,10 @@ class SaberisLineItem:
             uom=str(obj.get("UOM") or "") or None,
             manufacturer_part_number=str(obj.get("ManufacturerPartNumber") or "") or None,
             manufacturer_sku=str(obj.get("ManufacturerSKU") or "") or None,
-            volume=str(obj.get("Volume") or "") or None,
+            volume=int(obj.get("Volume") or 0) or 0,
             weight=str(obj.get("Weight") or "") or None,
             product_type_saberis=str(obj.get("ProductType") or "") or None
         )
-        
-
-        return item
 
 @dataclass
 class SaberisOrder:
@@ -192,6 +189,7 @@ class SaberisOrder:
     created_at: datetime
     customer_name: str
     shipping_address: ShippingAddress
+    total_volume: int = 0
     lines: List[SaberisLineItem] = field(default_factory=list) #type: ignore
 
     @classmethod
@@ -240,6 +238,8 @@ class SaberisOrder:
         dimension_pattern = re.compile(r'W=.*H=.*D=') #type:ignore
 
         # Process the unified list of raw line items
+        cumulative_volume: int = 0
+
         for raw_item_dict in raw_lines_list:
             if not raw_item_dict:
                 continue
@@ -269,6 +269,7 @@ class SaberisOrder:
             # If it's a "Product" line, create an enriched item using the current context
             elif item_type == "product":
                 processed_item = SaberisLineItem.from_json(raw_item_dict, context.copy())
+                cumulative_volume += processed_item.volume
                 processed_lines.append(processed_item)
 
         return cls(
@@ -277,6 +278,7 @@ class SaberisOrder:
             customer_name=customer_name,
             shipping_address=ship_addr,
             lines=processed_lines,
+            total_volume=cumulative_volume,
         )
 
     def first_catalog_code(self) -> str:
