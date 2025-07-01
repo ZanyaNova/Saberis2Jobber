@@ -4,94 +4,162 @@
 <div x-data="saberisDashboard()" x-init="init()">
     
     <div class="container">
-
-        <div class="grid">
-            
-            <section>
-                <h2>1. Select Jobber Quote</h2>
-
-                <article x-show="authorizationError" class="auth-error-card">
-                    <h4>Authorization Required</h4>
-                    <p>Could not connect to Jobber. Your authorization may have expired.</p>
-                    <footer>
-                        <a href="{{ url_for('authorize_jobber_route') }}" role="button" class="contrast">
-                            Re-authorize with Jobber
-                        </a>
-                    </footer>
-                </article>
-
-                <template x-for="quote in jobberQuotes" :key="quote.id">
-                    <article @click="selectedQuoteId = quote.id" :class="{ 'selected-card': selectedQuoteId === quote.id }" style="cursor: pointer;">
-                        <h4 x-text="quote.client_name"></h4>
-                        <footer>
-                            <small x-text="quote.shipping_address"></small></br>
-                            <small x-text="`Approved on: ${quote.approved_date}`" class="exported-by-label"></small>
-                        </footer>
-                    </article>
-                </template>
-
-                <div x-show="hasNextPage && !authorizationError">
-                    <button @click="fetchJobberQuotes()" :disabled="isLoadingQuotes">
-                        <span x-show="!isLoadingQuotes">Load More...</span>
-                        <span x-show="isLoadingQuotes" aria-busy="true">Loading...</span>
-                    </button>
-                </div>
-
-            </section>
-
-            <section :class="selectedQuoteId ? 'content-visible' : 'content-hidden'">
-                <h2>2. Select Design(s) & Qty</h2>
-                <template x-for="exportItem in saberisExports" :key="exportItem.saberis_id">
-                    
-                    <article 
-                        :class="{ 'selected-export': selectedExportIds.includes(exportItem.saberis_id) }" 
-                        class="export-card"
-                    >
-                        
-                        <div 
-                            class="quantity-container" 
-                            :class="{ 'is-disabled': !selectedExportIds.includes(exportItem.saberis_id) }"
-                        >
-                            <label :for="'qty-' + exportItem.saberis_id">Qty:</label>
-                            <input
-                                :id="'qty-' + exportItem.saberis_id"
-                                type="number"
-                                min="1"
-                                :disabled="!selectedExportIds.includes(exportItem.saberis_id)"
-                                @input="setQuantityFor(exportItem.saberis_id, $event.target.value)"
-                                :value="quantities[exportItem.saberis_id] || ''"
-                                
-                                :aria-invalid="selectedExportIds.includes(exportItem.saberis_id) && !getQuantityFor(exportItem.saberis_id)"
-                            >
-                        </div>
-                        <label>
-                            <input type="checkbox" :value="exportItem.saberis_id" x-model="selectedExportIds">
-                            <strong x-text="exportItem.customer_name"></strong>
-                        </label>
-                        <footer>
-                            <small x-text="exportItem.shipping_address"></small> </br>
-                            <small x-text="`Exported by: ${exportItem.username} on ${exportItem.export_date}`" class="exported-by-label"></small>
-                        </footer>
-
-                    </article>
-                </template>
-            </section>
-
-            <aside :class="isReadyToSend() ? 'content-visible' : 'content-hidden'">
-                <h2>3. Actions</h2>
-                <button @click="openQuoteCalculator()">
-                    <span x-show="!isSending">Calculate Quote</span>
-                </button>
-                <button @click="sendToJobber()" :disabled="!isReadyToSend() || isSending">
-                    <span x-show="!isSending">Send Items to Jobber</span>
-                    <span x-show="isSending" aria-busy="true">Sending...</span>
-                </button>
-                <p x-show="!isReadyToSend() && selectedExportIds.length > 0" style="color: var(--pico-color-red-500); font-size: 0.9em;">
-                    All selected designs must have a quantity.
-                </p>
-            </aside>
-
+        <div class="task-switcher">
+            <h2>Task:</h2>
+            <button @click="currentTask = 'calculateQuote'" :class="{ 'contrast': currentTask === 'calculateQuote' }">Calculate Quote</button>
+            <button @click="currentTask = 'sendToJobber'" :class="{ 'contrast': currentTask === 'sendToJobber' }">Send items to Jobber</button>
         </div>
+
+        <template x-if="currentTask === 'sendToJobber'">
+
+            <div class="grid">
+                
+                <section>
+                    <h2>1. Select Jobber Quote</h2>
+
+                    <article x-show="authorizationError" class="auth-error-card">
+                        <h4>Authorization Required</h4>
+                        <p>Could not connect to Jobber. Your authorization may have expired.</p>
+                        <footer>
+                            <a href="{{ url_for('authorize_jobber_route') }}" role="button" class="contrast">
+                                Re-authorize with Jobber
+                            </a>
+                        </footer>
+                    </article>
+
+                    <template x-for="quote in jobberQuotes" :key="quote.id">
+                        <article @click="selectedQuoteId = quote.id" :class="{ 'selected-card': selectedQuoteId === quote.id }" style="cursor: pointer;">
+                            <h4 x-text="quote.client_name"></h4>
+                            <footer>
+                                <small x-text="quote.shipping_address"></small></br>
+                                <small x-text="`Approved on: ${quote.approved_date}`" class="exported-by-label"></small>
+                            </footer>
+                        </article>
+                    </template>
+
+                    <div x-show="hasNextPage && !authorizationError">
+                        <button @click="fetchJobberQuotes()" :disabled="isLoadingQuotes">
+                            <span x-show="!isLoadingQuotes">Load More...</span>
+                            <span x-show="isLoadingQuotes" aria-busy="true">Loading...</span>
+                        </button>
+                    </div>
+
+                </section>
+
+                <section :class="selectedQuoteId ? 'content-visible' : 'content-hidden'">
+                    <h2>2. Select Design(s) & Qty</h2>
+                    <template x-for="exportItem in saberisExports" :key="exportItem.saberis_id">
+                        
+                        <article 
+                            :class="{ 'selected-export': selectedExportIds.includes(exportItem.saberis_id) }" 
+                            class="export-card"
+                        >
+                            
+                            <div 
+                                class="quantity-container" 
+                                :class="{ 'is-disabled': !selectedExportIds.includes(exportItem.saberis_id) }"
+                            >
+                                <label :for="'qty-' + exportItem.saberis_id">Qty:</label>
+                                <input
+                                    :id="'qty-' + exportItem.saberis_id"
+                                    type="number"
+                                    min="1"
+                                    :disabled="!selectedExportIds.includes(exportItem.saberis_id)"
+                                    @input="setQuantityFor(exportItem.saberis_id, $event.target.value)"
+                                    :value="quantities[exportItem.saberis_id] || ''"
+                                    
+                                    :aria-invalid="selectedExportIds.includes(exportItem.saberis_id) && !getQuantityFor(exportItem.saberis_id)"
+                                >
+                            </div>
+                            <label>
+                                <input type="checkbox" :value="exportItem.saberis_id" x-model="selectedExportIds">
+                                <strong x-text="exportItem.customer_name"></strong>
+                            </label>
+                            <footer>
+                                <small x-text="exportItem.shipping_address"></small> </br>
+                                <small x-text="`Exported by: ${exportItem.username} on ${exportItem.export_date}`" class="exported-by-label"></small>
+                            </footer>
+
+                        </article>
+                    </template>
+                </section>
+
+                <aside :class="isReadyToSend() ? 'content-visible' : 'content-hidden'">
+                    <h2>3. Actions</h2>
+                    <button @click="openQuoteCalculator()">
+                        <span x-show="!isSending">Calculate Quote</span>
+                    </button>
+                    <button @click="sendToJobber()" :disabled="!isReadyToSend() || isSending">
+                        <span x-show="!isSending">Send Items to Jobber</span>
+                        <span x-show="isSending" aria-busy="true">Sending...</span>
+                    </button>
+                    <p x-show="!isReadyToSend() && selectedExportIds.length > 0" style="color: var(--pico-color-red-500); font-size: 0.9em;">
+                        All selected designs must have a quantity.
+                    </p>
+                </aside>
+            </div>
+        </template>
+
+        <template x-if="currentTask === 'calculateQuote'">
+            <div class="grid">
+
+                <section>
+                    <h2>2. Select Design(s) & Qty</h2>
+                    <template x-for="exportItem in saberisExports" :key="exportItem.saberis_id">
+                        
+                        <article 
+                            :class="{ 'selected-export': selectedExportIds.includes(exportItem.saberis_id) }" 
+                            class="export-card"
+                        >
+                            
+                            <div 
+                                class="quantity-container" 
+                                :class="{ 'is-disabled': !selectedExportIds.includes(exportItem.saberis_id) }"
+                            >
+                                <label :for="'qty-' + exportItem.saberis_id">Qty:</label>
+                                <input
+                                    :id="'qty-' + exportItem.saberis_id"
+                                    type="number"
+                                    min="1"
+                                    :disabled="!selectedExportIds.includes(exportItem.saberis_id)"
+                                    @input="setQuantityFor(exportItem.saberis_id, $event.target.value)"
+                                    :value="quantities[exportItem.saberis_id] || ''"
+                                    
+                                    :aria-invalid="selectedExportIds.includes(exportItem.saberis_id) && !getQuantityFor(exportItem.saberis_id)"
+                                >
+                            </div>
+                            <label>
+                                <input type="checkbox" :value="exportItem.saberis_id" x-model="selectedExportIds">
+                                <strong x-text="exportItem.customer_name"></strong>
+                            </label>
+                            <footer>
+                                <small x-text="exportItem.shipping_address"></small> </br>
+                                <small x-text="`Exported by: ${exportItem.username} on ${exportItem.export_date}`" class="exported-by-label"></small>
+                            </footer>
+
+                        </article>
+                    </template>
+                </section>
+
+                <section>
+                    <h2>2. Catalogue Mark-up</h2>
+                    <p><i>(Catalogue list and editable mark-up fields will go here)</i></p>
+                </section>
+
+                <aside>
+                    <h2>3. Totals</h2>
+                    <article>
+                        <p>Base Cost: <strong id="base-cost">$0.00</strong></p>
+                        <p>Total Markup: <strong id="total-markup">$0.00</strong></p>
+                        <hr>
+                        <footer>
+                            <h4>Grand Total: <strong id="grand-total">$0.00</strong></h4>
+                        </footer>
+                    </article>
+                </aside>
+            </div>
+        </template>
+
     </div>
 </div>
 
@@ -115,6 +183,7 @@
     function saberisDashboard() {
         return {
             // State
+            currentTask: 'sendToJobber', // 'sendToJobber' or 'calculateQuote'
             isLoading: false,
             isLoadingQuotes: false,
             isSending: false,
