@@ -3,6 +3,7 @@ from .gsheet_config import GSHEET_RECORDSHEET, GSHEET_BRANDSHEET, GSHEET_MARKUP
 from typing import Final
 
 DEFAULT_MARKUP: float = 0.035
+MARKUP_ROW_INDEX: int = 3
 
 def get_brand_if_available(catalog_id: str) -> str:
     """
@@ -41,7 +42,7 @@ def get_brand_or_catalog_markup(catalog_or_brand: str) -> float:
         if found_cell is None or found_cell.col > 2:
             return DEFAULT_MARKUP
 
-        markup_value_str = GSHEET_MARKUP.cell(found_cell.row, 3).value
+        markup_value_str = GSHEET_MARKUP.cell(found_cell.row, MARKUP_ROW_INDEX).value
 
         if markup_value_str:
             markup = float(markup_value_str)
@@ -55,6 +56,42 @@ def get_brand_or_catalog_markup(catalog_or_brand: str) -> float:
     
     return DEFAULT_MARKUP
 
+def set_brand_or_catalog_markup(catalog_or_brand: str, markup: float) -> bool:
+    """
+    Sets the markup value for a given catalog or brand.
+
+    If the entry exists, it updates the markup in the third column.
+    If it does not exist, it creates a new row with the catalog/brand and its markup.
+
+    Args:
+        catalog_or_brand: The name of the catalog or brand.
+        markup: The markup percentage to set (e.g., 0.05 for 5%).
+
+    Returns:
+        True if the operation was successful, False otherwise.
+    """
+    print(f"Attempting to set markup for '{catalog_or_brand}' to {markup}...")
+    try:
+        found_cell: Cell | None = GSHEET_MARKUP.find(catalog_or_brand) #type: ignore
+
+        if found_cell:
+            # Entry found, update the markup in the same row.
+            GSHEET_MARKUP.update_cell(found_cell.row, MARKUP_ROW_INDEX, markup)
+            log_message = f"Updated markup for '{catalog_or_brand}' to {markup}."
+            print (log_message)
+        else:
+            # No entry found, create a new one.
+            # We assume it's a catalog and leave the brand column empty.
+            GSHEET_MARKUP.append_row([catalog_or_brand, "", markup])
+            log_message = f"Created new markup entry for '{catalog_or_brand}' with value {markup}."
+            print (log_message)
+
+        return True
+
+    except exceptions.GSpreadException as e: #type:ignore
+        error_message = f"Failed to set markup for '{catalog_or_brand}'. Error: {e}"
+        print(error_message)
+        return False
 
 def get_adjacent_value(sheet: Worksheet, search_value: str, columns_over: int = 1) -> str | None:
     """
