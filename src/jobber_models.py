@@ -6,7 +6,7 @@ from __future__ import annotations  # Allows forward references for type hints
 import re
 import hashlib
 import json
-from .gsheet.client_sheet_manager import get_brand_if_available
+from .gsheet.catalog_manager import catalog_manager
 from dataclasses import dataclass, asdict, field
 from datetime import datetime
 from typing import List, TypedDict, Optional, Any, Union, cast, Dict
@@ -159,7 +159,7 @@ class SaberisLineItem:
             except (ValueError, TypeError): return 0.0
 
         context_copy = context.copy()
-        popped_context = context_copy.pop("Catalog", None)
+        popped_context = context_copy.pop("Brand", None)
 
         # Create the base object with data from the line item itself
         return SaberisLineItem(
@@ -261,7 +261,8 @@ class SaberisOrder:
                     value = value.strip()
 
                     if key == "Catalog":
-                        context[key] = get_brand_if_available(value)
+                        context[key] = value
+                        context["brand"] = catalog_manager.get_brand(value)
                         cumulative_catalogs.add(value)
                     else:
                         context[key] = value

@@ -87,21 +87,17 @@ if not (0 <= LOG_PRIORITY_THRESHOLD <= 5):
     )
 
 # --- Open Workbook and Specific Worksheet: Brand ---
-BRAND_SHEET_NAME: Final[str] = "CatalogToBrand"  # Define the sheet name as a constant
+CATALOG_DATA_NAME: Final[str] = "CatalogData"  
 
 try:
-    GSHEET_BRANDSHEET: Final[Worksheet] = GSHEET_WORKBOOK.worksheet(BRAND_SHEET_NAME)
+    GSHEET_CATALOG_DATA: Final[Worksheet] = GSHEET_WORKBOOK.worksheet(CATALOG_DATA_NAME)
 except gspread.exceptions.WorksheetNotFound:
     raise ValueError(
-        f"The worksheet named '{BRAND_SHEET_NAME}' was not found in the workbook: {WORKBOOK_URL_ENV}. "
+        f"The worksheet named '{CATALOG_DATA_NAME}' was not found in the workbook: {WORKBOOK_URL_ENV}. "
         "Please ensure the sheet exists and the name is correct."
     )
 except Exception as e:
     raise RuntimeError(
-        f"An unexpected error occurred while trying to access worksheet '{BRAND_SHEET_NAME}'. "
+        f"An unexpected error occurred while trying to access worksheet '{CATALOG_DATA_NAME}'. "
         f"Original error: {e}"
     ) from e
-
-# --- Open Workbook and Specific Worksheet: Markup ---
-MARKUP_SHEET_NAME: Final[str] = "Markup"  
-GSHEET_MARKUP = GSHEET_BRANDSHEET
