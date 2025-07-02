@@ -8,6 +8,15 @@
             <h2>Task:</h2>
             <button @click="currentTask = 'calculateQuote'" :class="{ 'contrast': currentTask === 'calculateQuote' }">Calculate Quote</button>
             <button @click="currentTask = 'sendToJobber'" :class="{ 'contrast': currentTask === 'sendToJobber' }">Send items to Jobber</button>
+            <article x-show="authorizationError" class="auth-error-card">
+                <h4>Authorization Required</h4>
+                <p>Could not connect to Jobber. Your authorization may have expired.</p>
+                <footer>
+                    <a href="{{ url_for('authorize_jobber_route') }}" role="button" class="contrast">
+                        Re-authorize with Jobber
+                    </a>
+                </footer>
+            </article>
         </div>
 
         <template x-if="currentTask === 'sendToJobber'">
@@ -16,17 +25,6 @@
                 
                 <section>
                     <h2>1. Select Jobber Quote</h2>
-
-                    <article x-show="authorizationError" class="auth-error-card">
-                        <h4>Authorization Required</h4>
-                        <p>Could not connect to Jobber. Your authorization may have expired.</p>
-                        <footer>
-                            <a href="{{ url_for('authorize_jobber_route') }}" role="button" class="contrast">
-                                Re-authorize with Jobber
-                            </a>
-                        </footer>
-                    </article>
-
                     <template x-for="quote in jobberQuotes" :key="quote.id">
                         <article @click="selectedQuoteId = quote.id" :class="{ 'selected-card': selectedQuoteId === quote.id }" style="cursor: pointer;">
                             <h4 x-text="quote.client_name"></h4>
@@ -293,9 +291,16 @@
 
             async refreshExports() {
                 this.isLoading = true;
-                const response = await fetch('/api/saberis-exports');
-                this.saberisExports = await response.json();
-                this.isLoading = false;
+                try {
+                    const response = await fetch('/api/saberis-exports');
+                    if (!response.ok) throw new Error('Failed to fetch exports');
+                    this.saberisExports = await response.json();
+                } catch (error) {
+                    console.error("Error fetching Saberis exports:", error);
+                    alert("Could not load Saberis designs.");
+                } finally {
+                    this.isLoading = false;
+                }
             },
 
             getQuantityFor(saberisId) {
@@ -316,43 +321,41 @@
             },
             
             // --- Quote Calculation Methods ---
-            async updateCatalogsAndCosts() {
+            updateCatalogsAndCosts() {
                 if (this.selectedExportIds.length === 0) {
                     this.uniqueCatalogs = [];
                     this.catalogBaseCosts = {};
                     return;
                 }
 
-                // This is a placeholder for an API call that would fetch the details
-                // for the selected exports. For now, we'll simulate it.
-                // In a real implementation, you would have an endpoint like:
-                // const response = await fetch('/api/export-details', {
-                //     method: 'POST',
-                //     headers: { 'Content-Type': 'application/json' },
-                //     body: JSON.stringify({ export_ids: this.selectedExportIds })
-                // });
-                // const data = await response.json();
-                
-                // Simulated data - replace with actual API call
-                const data = {
-                    "catalogs": ["KWP_24C1", "FWQ0724B"],
-                    "costs": {
-                        "KWP_24C1": 1856.00,
-                        "FWQ0724B": 1200.00
-                    }
-                };
+                const selectedExports = this.saberisExports.filter(exp => 
+                    this.selectedExportIds.includes(exp.saberis_id)
+                );
 
-                this.uniqueCatalogs = data.catalogs;
-                
+                const newUniqueCatalogs = new Set();
                 const newBaseCosts = {};
-                for (const catalog of this.uniqueCatalogs) {
-                    newBaseCosts[catalog] = (data.costs[catalog] || 0) * (this.quantities[this.selectedExportIds[0]] || 1);
+
+                for (const exp of selectedExports) {
+                    const quantity = this.quantities[exp.saberis_id] || 1;
+                    
+                    for (const catalog of (exp.catalogs || [])) {
+                        newUniqueCatalogs.add(catalog);
+                        
+                        const costForCatalogInThisExport = exp.costs_by_catalog?.[catalog] || 0;
+                        
+                        // Initialize the catalog in our new costs object if not present
+                        if (!newBaseCosts[catalog]) {
+                            newBaseCosts[catalog] = 0;
+                        }
+
+                        newBaseCosts[catalog] += costForCatalogInThisExport * quantity;
+                    }
                 }
 
+                this.uniqueCatalogs = Array.from(newUniqueCatalogs).sort();
                 this.catalogBaseCosts = newBaseCosts;
-
             },
-            
+
             calculateMarkup(catalog) {
                 const baseCost = this.catalogBaseCosts[catalog] || 0;
                 const markupPercent = this.catalogMarkups[catalog] || 0;

@@ -1,13 +1,13 @@
 import os
-
+import json
 from flask import Flask, request, redirect, url_for, render_template, jsonify
 
-from .saberis_ingestion import ingest_saberis_exports
+from .saberis_ingestion import ingest_saberis_exports, SaberisExportRecord
 
 # Auth and Config
 from .jobber_auth_flow import get_authorization_url, exchange_code_for_token, get_valid_access_token, verify_state_parameter
 from .jobber_client_module import JobberClient, QuoteNodeGQL, QuoteLineEditItemGQL, QuoteEditLineItemInputGQL
-from .jobber_models import get_line_items_from_export
+from .jobber_models import get_line_items_from_export, SaberisOrder
 from typing import Dict, Any, TypedDict, List
 
 # Flask App Initialization
@@ -22,6 +22,13 @@ class SaberisExportPayload(TypedDict):
 class SendToJobberPayload(TypedDict):
     quoteId: str
     exports: List[SaberisExportPayload]
+
+class EnrichedSaberisExportRecord(SaberisExportRecord):
+    """
+    Extends the basic manifest record with data needed for quote calculation.
+    """
+    catalogs: List[str]
+    costs_by_catalog: Dict[str, float]
 
 # ---------------------------------------------------------------------------
 # Data Transformation
@@ -100,13 +107,39 @@ def get_jobber_quotes():
 @app.route('/api/saberis-exports')
 def get_saberis_exports():
     """
-    API endpoint to run the ingestion logic and return the manifest.
-    This simulates refreshing the list of available exports.
+    API endpoint to run the ingestion logic and return the manifest,
+    now enriched with detailed, type-safe catalog and cost data.
     """
-    # This function already scans a folder and returns the manifest list
-    # See: src/saberis_ingestion.py
-    manifest_records = ingest_saberis_exports()
-    return jsonify(manifest_records)
+    manifest_records: List[SaberisExportRecord] = ingest_saberis_exports()
+    
+    enriched_records: List[EnrichedSaberisExportRecord] = []
+    for record in manifest_records:
+        try:
+            with open(record['stored_path'], 'r') as f:
+                saberis_data: Any = json.load(f)
+            
+            saberis_order = SaberisOrder.from_json(saberis_data)
+            
+            costs_by_catalog: Dict[str, float] = {}
+            for line in saberis_order.lines:
+                if line.type == "Product":
+                    costs_by_catalog[line.catalog] = costs_by_catalog.get(line.catalog, 0) + line.cost
+
+            # Create a new, strongly-typed dictionary instead of modifying the old one.
+            # This is clean, explicit, and respects the TypedDict contract.
+            enriched_record: EnrichedSaberisExportRecord = {
+                **record,  # Unpack all key-value pairs from the original record
+                "catalogs": list(saberis_order.catalogs),
+                "costs_by_catalog": costs_by_catalog,
+            }
+            enriched_records.append(enriched_record)
+
+        except (IOError, json.JSONDecodeError) as e:
+            print(f"WARN: Could not process file {record['stored_path']} for enrichment. Skipping. Error: {e}")
+            
+    return jsonify(enriched_records)
+
+
 
 @app.route('/api/send-to-jobber', methods=['POST'])
 def send_to_jobber():

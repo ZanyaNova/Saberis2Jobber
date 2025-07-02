@@ -275,7 +275,7 @@ class SaberisOrder:
             elif item_type == "product":
                 processed_item = SaberisLineItem.from_json(raw_item_dict, context.copy())
                 cumulative_volume += processed_item.volume
-                cumulative_cost += processed_item.cost
+                cumulative_cost += processed_item.cost * processed_item.quantity
                 processed_lines.append(processed_item)
 
         return cls(
