@@ -191,7 +191,7 @@ class SaberisOrder:
     customer_name: str
     shipping_address: ShippingAddress
     total_volume: int = 0
-    total_cost: float = 0.0
+    catalog_to_total_cost: Dict[str, float] = field(default_factory=Dict) #type:ignore
     catalogs: set[str] = field(default_factory=set) #type: ignore
     lines: List[SaberisLineItem] = field(default_factory=list) #type: ignore
 
@@ -242,7 +242,8 @@ class SaberisOrder:
 
         # Process the unified list of raw line items
         cumulative_volume: int = 0
-        cumulative_cost: float = 0.0
+        # FIX: Initialize as a normal dictionary
+        catalog_to_total_cost: Dict[str, float] = {}
         cumulative_catalogs: set[str] = set()
 
         for raw_item_dict in raw_lines_list:
@@ -264,7 +265,7 @@ class SaberisOrder:
 
                     if key == "Catalog":
                         context[key] = value
-                        context["brand"] = catalog_manager.get_brand(value)
+                        context["Brand"] = catalog_manager.get_brand(value)
                         cumulative_catalogs.add(value)
                     else:
                         context[key] = value
@@ -277,7 +278,10 @@ class SaberisOrder:
             elif item_type == "product":
                 processed_item = SaberisLineItem.from_json(raw_item_dict, context.copy())
                 cumulative_volume += processed_item.volume
-                cumulative_cost += processed_item.cost
+                
+                # FIX: Use .get() to avoid a KeyError and safely update the total
+                catalog_to_total_cost[context["Catalog"]] = catalog_to_total_cost.get(context["Catalog"], 0) + (processed_item.cost * processed_item.quantity)
+                
                 processed_lines.append(processed_item)
 
         return cls(
@@ -287,7 +291,7 @@ class SaberisOrder:
             shipping_address=ship_addr,
             lines=processed_lines,
             total_volume=cumulative_volume,
-            total_cost=cumulative_cost,
+            catalog_to_total_cost=catalog_to_total_cost,
             catalogs=cumulative_catalogs,
         )
 

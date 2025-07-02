@@ -5,9 +5,6 @@
     
     <div class="container">
         <div class="task-switcher">
-            <h2>Select Task:</h2>
-            <button @click="currentTask = 'calculateQuote'" :class="{ 'contrast': currentTask === 'calculateQuote' }">Calculate Quote</button>
-            <button @click="currentTask = 'sendToJobber'" :class="{ 'contrast': currentTask === 'sendToJobber' }">Send items to Jobber</button>
             <article x-show="authorizationError" class="auth-error-card">
                 <h4>Authorization Required</h4>
                 <p>Could not connect to Jobber. Your authorization may have expired.</p>
@@ -17,6 +14,9 @@
                     </a>
                 </footer>
             </article>
+            <h2>Select Task:</h2>
+            <button @click="currentTask = 'calculateQuote'" :class="{ 'contrast': currentTask === 'calculateQuote' }">Calculate Quote</button>
+            <button @click="currentTask = 'sendToJobber'" :class="{ 'contrast': currentTask === 'sendToJobber' }">Send items to Jobber</button>
             </br>
             </br>
         </div>
@@ -142,7 +142,12 @@
                 </section>
 
                 <section>
-                    <h3>2. Catalogue Mark-up</h3>
+                    <h3>
+                        2. Catalogue Mark-up
+                        <button x-show="isMarkupDirty()" @click="saveMarkups()" style="float: right; padding: 5px 10px; font-size: 0.8em; font-weight: 80;">
+                            Save
+                        </button>
+                    </h3>
                     <template x-for="catalog in uniqueCatalogs" :key="catalog">
                         <article class="catalog-card">
                             <header><strong x-text="catalog"></strong></header>
@@ -214,7 +219,7 @@
     function saberisDashboard() {
         return {
             // State
-            currentTask: 'calculateQuote', // 'sendToJobber' or 'calculateQuote'
+            currentTask: 'calculateQuote',
             isLoading: false,
             isLoadingQuotes: false,
             isSending: false,
@@ -229,14 +234,51 @@
             saberisExports: [],
             selectedQuoteId: null,
             selectedExportIds: [],
-            quantities: {}, // e.g., { 'saberis_id_1': 2, 'saberis_id_2': 1 }
+            quantities: {},
             
             // Quote Calculation
             uniqueCatalogs: [],
             catalogMarkups: {},
             catalogBaseCosts: {},
+            originalMarkups: {}, 
+
+            // --- NEW: Helper to format numbers for display ---
+            formatForDisplay(num, maxDecimals = 3) {
+                if (typeof num !== 'number') return num;
+                // Round to a fixed number of decimals to handle precision errors, then convert back to a number
+                // to automatically strip trailing zeros (e.g., 3.500 -> 3.5)
+                return Number(num.toFixed(maxDecimals));
+            },
+
+            nearlyEquals(a, b, epsilon = 0.001) {
+                const absA = Math.abs(a);
+                const absB = Math.abs(b);
+                const diff = Math.abs(a - b);
+
+                if (a === b) { 
+                    return true;
+                } else if (a === 0 || b === 0 || (absA + absB < Number.MIN_VALUE)) {
+                    return diff < (epsilon * Number.MIN_VALUE);
+                } else {
+                    return diff / (absA + absB) < epsilon;
+                }
+            },
+
+            isMarkupDirty() {
+                if (Object.keys(this.catalogMarkups).length !== Object.keys(this.originalMarkups).length) {
+                    return true;
+                }
+                for (const catalog in this.catalogMarkups) {
+                    const originalValue = this.originalMarkups[catalog] || 0;
+                    const currentValue = this.catalogMarkups[catalog] || 0;
+                    if (!this.nearlyEquals(originalValue, currentValue)) {
+                        return true;
+                    }
+                }
+                return false;
+            },
             
-            // Computed Properties for Quote Calculation
+            // Computed Properties
             get totalBaseCost() {
                 return Object.values(this.catalogBaseCosts).reduce((total, cost) => total + cost, 0);
             },
@@ -246,7 +288,6 @@
             get grandTotal() {
                 return this.totalBaseCost + this.totalMarkup;
             },
-
 
             // Methods
             init() {
@@ -265,22 +306,17 @@
 
                 try {
                     const response = await fetch(url);
-                    
                     if (response.status === 401) {
                         this.authorizationError = true;
-                        return; // Stop processing
+                        return;
                     }
-                    
                     if (!response.ok) {
                         throw new Error(`Failed to fetch quotes: ${response.statusText}`);
                     }
-
                     const data = await response.json();
-                    
                     this.jobberQuotes = [...this.jobberQuotes, ...data.quotes];
                     this.nextCursor = data.next_cursor;
                     this.hasNextPage = data.has_next_page;
-
                 } catch (error) {
                     console.error("Error fetching Jobber quotes:", error);
                     if (!this.authorizationError) {
@@ -316,17 +352,16 @@
             },
 
             isReadyToSend() {
-                if (this.selectedExportIds.length === 0) {
-                    return false;
-                }
+                if (this.selectedExportIds.length === 0) return false;
                 return this.selectedExportIds.every(id => this.getQuantityFor(id));
             },
             
-            // --- Quote Calculation Methods ---
-            updateCatalogsAndCosts() {
+            async updateCatalogsAndCosts() {
                 if (this.selectedExportIds.length === 0) {
                     this.uniqueCatalogs = [];
                     this.catalogBaseCosts = {};
+                    this.catalogMarkups = {}; 
+                    this.originalMarkups = {};
                     return;
                 }
 
@@ -336,32 +371,46 @@
 
                 const newUniqueCatalogs = new Set();
                 const newBaseCosts = {};
+                const markupsToFetch = {};
 
                 for (const exp of selectedExports) {
                     const quantity = this.quantities[exp.saberis_id] || 1;
-                    
-                    for (const catalog of (exp.catalogs || [])) {
+                    for (const catalog in (exp.costs_by_catalog || {})) {
                         newUniqueCatalogs.add(catalog);
-                        
-                        const costForCatalogInThisExport = exp.costs_by_catalog?.[catalog] || 0;
-                        
-                        // Initialize the catalog in our new costs object if not present
+                        const costForCatalog = exp.costs_by_catalog[catalog] || 0;
                         if (!newBaseCosts[catalog]) {
                             newBaseCosts[catalog] = 0;
                         }
-
-                        newBaseCosts[catalog] += costForCatalogInThisExport * quantity;
+                        newBaseCosts[catalog] += costForCatalog * quantity;
                     }
                 }
 
                 this.uniqueCatalogs = Array.from(newUniqueCatalogs).sort();
                 this.catalogBaseCosts = newBaseCosts;
+                
+                for (const catalog of this.uniqueCatalogs) {
+                    if (this.catalogMarkups[catalog] === undefined) {
+                        try {
+                            const response = await fetch(`/api/catalog-markup/${catalog}`);
+                            const data = await response.json();
+                            // --- MODIFIED: Use the new display formatter here ---
+                            markupsToFetch[catalog] = this.formatForDisplay(data.markup * 100);
+                        } catch (error) {
+                            console.error(`Error fetching markup for ${catalog}:`, error);
+                            markupsToFetch[catalog] = 3.5; 
+                        }
+                    } else {
+                        markupsToFetch[catalog] = this.catalogMarkups[catalog];
+                    }
+                }
+                this.catalogMarkups = { ...markupsToFetch };
+                this.originalMarkups = { ...markupsToFetch };
             },
-
+            
             calculateMarkup(catalog) {
                 const baseCost = this.catalogBaseCosts[catalog] || 0;
                 const markupPercent = this.catalogMarkups[catalog] || 0;
-                return baseCost * (markupPercent / 100);
+                return Math.round((baseCost * (markupPercent / 100)) * 100) / 100;
             },
             
             formatCurrency(amount) {
@@ -371,22 +420,39 @@
                 }).format(amount);
             },
 
-            async sendToJobber() {
-                if (this.isSending) {
-                    return;
+            async saveMarkups() {
+                const markupsToSave = {};
+                for (const catalog of this.uniqueCatalogs) {
+                    markupsToSave[catalog] = (this.catalogMarkups[catalog] || 0) / 100;
                 }
+                try {
+                    const response = await fetch('/api/catalog-markups', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(markupsToSave),
+                    });
+                    const result = await response.json();
+                    if (!response.ok) {
+                        throw new Error(result.error || 'Failed to save markups.');
+                    }
+                    alert('Markups saved successfully!');
+                    this.originalMarkups = { ...this.catalogMarkups };
+                } catch (error) {
+                    console.error("Error saving markups:", error);
+                    alert(`An error occurred while saving: ${error.message}`);
+                }
+            },
 
+            async sendToJobber() {
+                if (this.isSending) return;
                 if (!this.isReadyToSend()) {
                     alert('Please ensure all selected items have a quantity greater than zero.');
                     return;
                 }
-
                 if (!confirm(`Are you sure you want to add items from ${this.selectedExportIds.length} export(s) to the selected Jobber Quote?`)) {
                     return;
                 }
-
                 this.isSending = true;
-
                 const payload = {
                     quoteId: this.selectedQuoteId,
                     exports: this.selectedExportIds.map(id => ({
@@ -394,28 +460,19 @@
                         quantity: this.quantities[id]
                     }))
                 };
-
                 try {
                     const response = await fetch('/api/send-to-jobber', {
                         method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
+                        headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify(payload),
                     });
-
                     const result = await response.json();
-
                     if (!response.ok) {
                         throw new Error(result.error || `HTTP error! status: ${response.status}`);
                     }
-
                     alert(result.message || 'Successfully sent items to Jobber!');
-                    // Optionally, reset the state after a successful send
                     this.selectedExportIds = [];
                     this.quantities = {};
-
-
                 } catch (error) {
                     console.error("Error sending to Jobber:", error);
                     alert(`An error occurred: ${error.message}`);
@@ -423,7 +480,6 @@
                     this.isSending = false;
                 }
             },
-
         };
     }
 </script>

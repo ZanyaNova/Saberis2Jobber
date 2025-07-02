@@ -1,14 +1,14 @@
 import os
 import json
-from flask import Flask, request, redirect, url_for, render_template, jsonify
-
+from flask import Flask, request, redirect, url_for, render_template, jsonify, Response
+from .gsheet.catalog_manager import catalog_manager
 from .saberis_ingestion import ingest_saberis_exports, SaberisExportRecord
 
 # Auth and Config
 from .jobber_auth_flow import get_authorization_url, exchange_code_for_token, get_valid_access_token, verify_state_parameter
 from .jobber_client_module import JobberClient, QuoteNodeGQL, QuoteLineEditItemGQL, QuoteEditLineItemInputGQL
 from .jobber_models import get_line_items_from_export, SaberisOrder
-from typing import Dict, Any, TypedDict, List
+from typing import Dict, Any, TypedDict, List, Union, Tuple
 
 # Flask App Initialization
 app = Flask(__name__)
@@ -120,17 +120,12 @@ def get_saberis_exports():
             
             saberis_order = SaberisOrder.from_json(saberis_data)
             
-            costs_by_catalog: Dict[str, float] = {}
-            for line in saberis_order.lines:
-                if line.type == "Product":
-                    costs_by_catalog[line.catalog] = costs_by_catalog.get(line.catalog, 0) + line.cost
-
             # Create a new, strongly-typed dictionary instead of modifying the old one.
             # This is clean, explicit, and respects the TypedDict contract.
             enriched_record: EnrichedSaberisExportRecord = {
                 **record,  # Unpack all key-value pairs from the original record
                 "catalogs": list(saberis_order.catalogs),
-                "costs_by_catalog": costs_by_catalog,
+                "costs_by_catalog": saberis_order.catalog_to_total_cost, # Use the pre-calculated dictionary
             }
             enriched_records.append(enriched_record)
 
@@ -222,6 +217,50 @@ def send_to_jobber():
         final_messages.append(update_message)
         final_messages.append(add_message)
         return jsonify({"message": " ".join(filter(None, final_messages))})
+
+@app.route('/api/catalog-markup/<string:catalog_id>', methods=['GET'])
+def get_catalog_markup(catalog_id: str) -> Union[Response, Tuple[Response, int]]:
+    """
+    API endpoint to get the markup for a specific catalog.
+    """
+    try:
+        markup = catalog_manager.get_markup(catalog_id)
+        return jsonify({"catalog_id": catalog_id, "markup": markup})
+    except Exception as e:
+        print(f"ERROR: Could not fetch markup for {catalog_id}: {e}")
+        # This now correctly matches the return type hint
+        return jsonify({"catalog_id": catalog_id, "markup": 0.035}), 500
+
+@app.route('/api/catalog-markups', methods=['POST'])
+def save_catalog_markups() -> Union[Response, Tuple[Response, int]]:
+    """
+    API endpoint to save markup values for multiple catalogs.
+    Expects a JSON payload like: {"CATALOG_A": 0.05, "CATALOG_B": 0.10}
+    """
+    data: Any = request.get_json()
+    
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid payload format. Expected a JSON object."}), 400
+
+    # After the check above, the linter knows 'data' is a dictionary.
+    # We can now safely iterate over its items.
+    typed_data: Dict[str, Any] = data #type:ignore
+    errors: Dict[str, str] = {}
+    
+    for catalog_id, markup in typed_data.items():
+        try:
+            markup_value = float(markup) # The 'markup' variable is now known.
+            if not catalog_manager.set_markup(catalog_id, markup_value):
+                 errors[catalog_id] = "Failed to save in Google Sheet."
+        except (ValueError, TypeError):
+            errors[catalog_id] = f"Invalid markup value: {markup}"
+        except Exception as e:
+            errors[catalog_id] = str(e)
+
+    if errors:
+        return jsonify({"error": "Failed to save some markups", "details": errors}), 500
+
+    return jsonify({"message": "Markups saved successfully."})
 
 @app.route('/')
 def home():
