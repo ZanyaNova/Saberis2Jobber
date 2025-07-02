@@ -133,6 +133,7 @@ class SaberisLineItem:
 
     # Contextual data from preceding "Text" lines that define the product's group
     catalog: str
+    brand: str
     attributes: Dict[str, str]
 
     # Other existing fields
@@ -159,12 +160,13 @@ class SaberisLineItem:
             except (ValueError, TypeError): return 0.0
 
         context_copy = context.copy()
-        popped_context = context_copy.pop("Brand", None)
+        catalog = context_copy.pop("Catalog", "Unknown Catalog")
 
         # Create the base object with data from the line item itself
         return SaberisLineItem(
             type="Product",
-            catalog = popped_context or "Unknown Catalog",
+            catalog = context_copy.pop("Catalog", "Unknown Catalog"),
+            brand = context_copy.pop("Brand", "Unknown Catalog" + catalog),
             attributes= context_copy,
             line_id=int(obj.get("LineID") or -1),
             description=str(obj.get("Description") or ""),
