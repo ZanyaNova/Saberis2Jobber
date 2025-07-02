@@ -54,3 +54,15 @@ article.export-card {
     opacity: 50%;
     font-size: small;
 }
+
+/* Style for the inactive tab buttons */
+.task-switcher button:not([class*="contrast"]) {
+    --pico-background-color: var(--pico-card-background-color);
+    --pico-color: var(--pico-muted-color);
+    --pico-border-color: var(--pico-card-border-color);
+}
+
+/* Optional: A slightly more noticeable hover for inactive tabs */
+.task-switcher button:not([class*="contrast"]):hover {
+    --pico-background-color: var(--pico-table-row-striping-background-color);
+}

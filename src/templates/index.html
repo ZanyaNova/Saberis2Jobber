@@ -5,7 +5,7 @@
     
     <div class="container">
         <div class="task-switcher">
-            <h2>Task:</h2>
+            <h2>Select Task:</h2>
             <button @click="currentTask = 'calculateQuote'" :class="{ 'contrast': currentTask === 'calculateQuote' }">Calculate Quote</button>
             <button @click="currentTask = 'sendToJobber'" :class="{ 'contrast': currentTask === 'sendToJobber' }">Send items to Jobber</button>
             <article x-show="authorizationError" class="auth-error-card">
@@ -17,6 +17,8 @@
                     </a>
                 </footer>
             </article>
+            </br>
+            </br>
         </div>
 
         <template x-if="currentTask === 'sendToJobber'">
@@ -24,7 +26,7 @@
             <div class="grid">
                 
                 <section>
-                    <h2>1. Select Jobber Quote</h2>
+                    <h3>1. Select Jobber Quote</h3>
                     <template x-for="quote in jobberQuotes" :key="quote.id">
                         <article @click="selectedQuoteId = quote.id" :class="{ 'selected-card': selectedQuoteId === quote.id }" style="cursor: pointer;">
                             <h4 x-text="quote.client_name"></h4>
@@ -45,7 +47,7 @@
                 </section>
 
                 <section :class="selectedQuoteId ? 'content-visible' : 'content-hidden'">
-                    <h2>2. Select Design(s) & Qty</h2>
+                    <h3>2. Select Design(s) & Qty</h3>
                     <template x-for="exportItem in saberisExports" :key="exportItem.saberis_id">
                         
                         <article 
@@ -83,7 +85,7 @@
                 </section>
 
                 <aside :class="isReadyToSend() ? 'content-visible' : 'content-hidden'">
-                    <h2>3. Actions</h2>
+                    <h3>3. Actions</h3>
                     <button @click="openQuoteCalculator()">
                         <span x-show="!isSending">Calculate Quote</span>
                     </button>
@@ -102,7 +104,7 @@
             <div class="grid">
 
                 <section>
-                    <h2>1. Select Design(s) & Qty</h2>
+                    <h3>1. Select Design(s) & Qty</h3>
                     <template x-for="exportItem in saberisExports" :key="exportItem.saberis_id">
                         
                         <article 
@@ -140,12 +142,12 @@
                 </section>
 
                 <section>
-                    <h2>2. Catalogue Mark-up</h2>
+                    <h3>2. Catalogue Mark-up</h3>
                     <template x-for="catalog in uniqueCatalogs" :key="catalog">
                         <article class="catalog-card">
                             <header><strong x-text="catalog"></strong></header>
                             <div class="markup-container">
-                                <label :for="'markup-' + catalog">Markup %:</label>
+                                <label :for="'markup-' + catalog">% Markup:</label>
                                 <input 
                                     :id="'markup-' + catalog"
                                     type="number"
@@ -162,7 +164,7 @@
                 </section>
 
                 <aside>
-                    <h2>3. Totals</h2>
+                    <h3>3. Totals</h3>
                     <article>
                         <p>Base Cost: <strong x-text="formatCurrency(totalBaseCost)"></strong></p>
                         <p>Total Markup: <strong x-text="formatCurrency(totalMarkup)"></strong></p>
@@ -212,7 +214,7 @@
     function saberisDashboard() {
         return {
             // State
-            currentTask: 'sendToJobber', // 'sendToJobber' or 'calculateQuote'
+            currentTask: 'calculateQuote', // 'sendToJobber' or 'calculateQuote'
             isLoading: false,
             isLoadingQuotes: false,
             isSending: false,
