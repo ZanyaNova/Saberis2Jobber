@@ -189,9 +189,8 @@ class SaberisOrder:
     customer_name: str
     shipping_address: ShippingAddress
     total_volume: int = 0
-    #Presently unused, but could be helpful in the future:
-    catalog_to_cost_total: Dict[str,float] = field(default_factory=Dict) #type: ignore
-    catalogs: set[str] = field(default_factory=set) #type: ignore 
+    total_cost: float = 0.0
+    catalogs: set[str] = field(default_factory=set) #type: ignore
     lines: List[SaberisLineItem] = field(default_factory=list) #type: ignore
 
     @classmethod
@@ -241,7 +240,7 @@ class SaberisOrder:
 
         # Process the unified list of raw line items
         cumulative_volume: int = 0
-        catalog_to_cost: Dict[str,float] = field(default_factory=Dict) #type: ignore
+        cumulative_cost: float = 0.0
         cumulative_catalogs: set[str] = set()
 
         for raw_item_dict in raw_lines_list:
@@ -275,8 +274,7 @@ class SaberisOrder:
             elif item_type == "product":
                 processed_item = SaberisLineItem.from_json(raw_item_dict, context.copy())
                 cumulative_volume += processed_item.volume
-                cumulative_cost += processed_item.cost * processed_item.quantity
-                catalog_to_cost[context["Catalog"]] += processed_item.cost * processed_item.quantity
+                cumulative_cost += processed_item.cost
                 processed_lines.append(processed_item)
 
         return cls(
@@ -286,7 +284,7 @@ class SaberisOrder:
             shipping_address=ship_addr,
             lines=processed_lines,
             total_volume=cumulative_volume,
-            catalog_to_cost_total=catalog_to_cost,
+            total_cost=cumulative_cost,
             catalogs=cumulative_catalogs,
         )
 
