@@ -165,8 +165,8 @@ class SaberisLineItem:
         # Create the base object with data from the line item itself
         return SaberisLineItem(
             type="Product",
-            catalog = context_copy.pop("Catalog", "Unknown Catalog"),
-            brand = context_copy.pop("Brand", "Unknown Catalog" + catalog),
+            catalog = catalog,
+            brand = context_copy.pop("Brand", catalog),
             attributes= context_copy,
             line_id=int(obj.get("LineID") or -1),
             description=str(obj.get("Description") or ""),
@@ -360,7 +360,7 @@ def get_line_items_from_export(stored_path: str, ui_quantity: int) -> List[Quote
 
         # Construct the Jobber line item name and full description string
         base_name_parts = [
-            li.catalog,
+            li.brand,
             remove_curly_braces_and_content(li.description)
         ]
         description_parts: list[str] = []

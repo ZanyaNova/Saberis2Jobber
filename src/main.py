@@ -164,7 +164,7 @@ def send_to_jobber():
     saberis_export_records = ingest_saberis_exports()
     manifest = {item['saberis_id']: item for item in saberis_export_records}
 
-    # --- New Logic: Step 1 - Generate all desired line items ---
+    # ---  Generate all desired line items ---
     all_desired_line_items: List[QuoteLineEditItemGQL] = []
     for export_data in exports_payload:
         saberis_id = export_data.get('saberis_id')
