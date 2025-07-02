@@ -191,7 +191,7 @@ class SaberisOrder:
     shipping_address: ShippingAddress
     total_volume: int = 0
     total_cost: float = 0.0
-    catalogs: set[str] = set()
+    catalogs: set[str] = field(default_factory=set) #type: ignore
     lines: List[SaberisLineItem] = field(default_factory=list) #type: ignore
 
     @classmethod
