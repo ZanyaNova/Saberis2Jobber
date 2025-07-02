@@ -1,5 +1,4 @@
-# jobber_models.py (Revised)
-"""
+"""More actions
 Data models for Saberis and Jobber, and transformation logic.
 """
 from __future__ import annotations  # Allows forward references for type hints
@@ -35,7 +34,7 @@ class SaberisHeaderDict(TypedDict, total=False):
     Date: str
     Customer: SaberisCustomerDict 
     Shipping: SaberisShippingDict 
-    
+
 class SaberisLineItemDict(TypedDict, total=False):
     """Structure expected within a Saberis 'Line' object."""
     Type: str
@@ -131,11 +130,11 @@ class SaberisLineItem:
     quantity: float
     list_price: float
     cost: float
-    
+
     # Contextual data from preceding "Text" lines that define the product's group
     catalog: str
     attributes: Dict[str, str]
-    
+
     # Other existing fields
     product_code: Optional[str] = None
     sku: Optional[str] = None
@@ -158,7 +157,7 @@ class SaberisLineItem:
             if value is None or value == "": return 0.0
             try: return float(value)
             except (ValueError, TypeError): return 0.0
-       
+
         context_copy = context.copy()
         popped_context = context_copy.pop("Catalog", None)
 
@@ -198,7 +197,7 @@ class SaberisOrder:
     @classmethod
     def from_json(cls, doc: SaberisDocumentDict) -> SaberisOrder:
         """Create a SaberisOrder from a SaberisDocumentDict."""
-        
+
         saberis_order_document_node = doc.get("SaberisOrderDocument", {})
         order_node = saberis_order_document_node.get("Order", {})
 
@@ -224,7 +223,7 @@ class SaberisOrder:
         }
 
         processed_lines: List[SaberisLineItem] = []
-        
+
         # This context dictionary holds the state for the current group of products.
         # It will be updated as we iterate through the line items.
         context: Dict[str, str] = _create_empty_str_dict()
@@ -271,11 +270,12 @@ class SaberisOrder:
                 except ValueError:
                     # Not a key-value pair, ignore
                     pass
-            
+
             # If it's a "Product" line, create an enriched item using the current context
             elif item_type == "product":
                 processed_item = SaberisLineItem.from_json(raw_item_dict, context.copy())
                 cumulative_volume += processed_item.volume
+                cumulative_cost += processed_item.cost * processed_item.quantity
                 catalog_to_cost[context["Catalog"]] += processed_item.cost * processed_item.quantity
                 processed_lines.append(processed_item)
 
@@ -339,7 +339,7 @@ class QuoteCreateInput:
 # ---------------------------------------------------------------------------
 def saberis_to_jobber(order: SaberisOrder, client_id: str, property_id: str) -> QuoteCreateInput:
     """Transforms a SaberisOrder into a Jobber QuoteCreateInput using generic attributes."""
-    
+
     title = order.first_catalog_code() or "Cabinet Quote"
     jobber_lines: List[QuoteLineInput] = []
 
@@ -357,13 +357,13 @@ def saberis_to_jobber(order: SaberisOrder, client_id: str, property_id: str) -> 
         # --- Construct the Jobber line item DESCRIPTION ---
         # This part is now fully generic and future-proof.
         description_parts: list[str] = []
-        
+
         # Loop through the generic attributes dictionary and format them.
         for key, value in li.attributes.items():
             description_parts.append(f"{key}: {value}")
             if key in FIELDs_TO_PUT_IN_TITLE:
                 product_name_parts.append(value)
-        
+
         # Join name and job description arrays into one
         product_name = " | ".join(filter(None, product_name_parts))
         jobber_description = "\n".join(description_parts)
@@ -449,5 +449,3 @@ def get_line_items_from_export(stored_path: str, ui_quantity: int) -> List[Quote
             "saveToProductsAndServices": False
         }
         jobber_lines.append(line_item)
-
-    return jobber_lines
