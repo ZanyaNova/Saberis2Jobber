@@ -335,64 +335,6 @@ class QuoteCreateInput:
 # ---------------------------------------------------------------------------
 # Transformation Logic
 # ---------------------------------------------------------------------------
-def saberis_to_jobber(order: SaberisOrder, client_id: str, property_id: str) -> QuoteCreateInput:
-    """Transforms a SaberisOrder into a Jobber QuoteCreateInput using generic attributes."""
-
-    title = order.first_catalog_code() or "Cabinet Quote"
-    jobber_lines: List[QuoteLineInput] = []
-
-    for li in order.lines:
-        if li.type != "Product":
-            continue
-
-        # --- Construct the Jobber line item NAME ---
-        # The name still uses the specifically handled attributes.
-        product_name_parts = [
-            li.catalog,
-            remove_curly_braces_and_content(li.description)
-        ]
-
-        # --- Construct the Jobber line item DESCRIPTION ---
-        # This part is now fully generic and future-proof.
-        description_parts: list[str] = []
-
-        # Loop through the generic attributes dictionary and format them.
-        for key, value in li.attributes.items():
-            description_parts.append(f"{key}: {value}")
-            if key in FIELDs_TO_PUT_IN_TITLE:
-                product_name_parts.append(value)
-
-        # Join name and job description arrays into one
-        product_name = " | ".join(filter(None, product_name_parts))
-        jobber_description = "\n".join(description_parts)
-
-        jobber_lines.append(
-            QuoteLineInput(
-                name=product_name,
-                quantity=li.quantity,
-                unit_price=li.cost,
-                description=jobber_description,
-                unit_cost=li.cost if li.cost > 0 else None,
-                taxable=False,
-            )
-        )
-
-    if not jobber_lines:
-        jobber_lines.append(QuoteLineInput(name="Misc. Items", quantity=1.0, unit_price=0.0))
-
-    # TODO: Get actual quoteNumber from spreadsheet or other source
-    quote_num_placeholder: Optional[int] = 12345 # Placeholder for quote_number
-
-    return QuoteCreateInput(
-        client_id=client_id, 
-        property_id=property_id, 
-        title=title,
-        message="No message",
-        line_items=jobber_lines,
-        quote_number=quote_num_placeholder, # Added
-        # TODO: Set a real contract disclaimer if needed, or load from config
-        contract_disclaimer="Standard terms and conditions apply.", # Added, example
-    )
 
 def get_line_items_from_export(stored_path: str, ui_quantity: int) -> List[QuoteLineEditItemGQL]:
     """
@@ -447,3 +389,4 @@ def get_line_items_from_export(stored_path: str, ui_quantity: int) -> List[Quote
             "saveToProductsAndServices": False
         }
         jobber_lines.append(line_item)
+    return jobber_lines
