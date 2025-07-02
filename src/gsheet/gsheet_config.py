@@ -31,7 +31,7 @@ if not WORKBOOK_URL_ENV:
         "Please set it in your .env file or system environment."
     )
 
-# --- Open Workbook and Specific Worksheet: ID Pairs ---
+# --- Open Workbook ---
 try:
     GSHEET_WORKBOOK: Final[Spreadsheet] = GSHEET_ACCOUNT.open_by_url(WORKBOOK_URL_ENV)
 except gspread.exceptions.APIError as e:
@@ -45,22 +45,6 @@ except Exception as e:
         f"An unexpected error occurred while trying to open the workbook: {WORKBOOK_URL_ENV}. "
         f"Original error: {e}"
     ) from e
-
-RECORD_SHEET_NAME: Final[str] = "SaberisToJobberID"  
-
-try:
-    GSHEET_RECORDSHEET: Final[Worksheet] = GSHEET_WORKBOOK.worksheet(RECORD_SHEET_NAME)
-except gspread.exceptions.WorksheetNotFound:
-    raise ValueError(
-        f"The worksheet named '{RECORD_SHEET_NAME}' was not found in the workbook: {WORKBOOK_URL_ENV}. "
-        "Please ensure the sheet exists and the name is correct."
-    )
-except Exception as e:
-    raise RuntimeError(
-        f"An unexpected error occurred while trying to access worksheet '{RECORD_SHEET_NAME}'. "
-        f"Original error: {e}"
-    ) from e
-
 
 # --- Open Workbook and Specific Worksheet: Log ---
 LOG_SHEET_NAME: Final[str] = "Log"  # Define the sheet name as a constant

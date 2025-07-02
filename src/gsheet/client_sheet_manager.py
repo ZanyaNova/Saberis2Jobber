@@ -1,5 +1,5 @@
 from gspread import Worksheet, Cell
-from .gsheet_config import GSHEET_RECORDSHEET, GSHEET_BRANDSHEET, GSHEET_MARKUP
+from .gsheet_config import GSHEET_BRANDSHEET, GSHEET_MARKUP
 from typing import Final
 
 DEFAULT_MARKUP: Final[float] = 0.035
@@ -23,9 +23,9 @@ def get_brand_if_available(catalog_id: str) -> str:
     
     # Since its not been found, add ID to end of list 
     CATALOG_ID_COLUMN_INDEX: Final[int] = 1
-    catalog_column_values: list[int | float | str | None] = GSHEET_RECORDSHEET.col_values(CATALOG_ID_COLUMN_INDEX)
+    catalog_column_values: list[int | float | str | None] = GSHEET_BRANDSHEET.col_values(CATALOG_ID_COLUMN_INDEX)
     new_row_index: int = len(catalog_column_values) + 1
-    GSHEET_RECORDSHEET.update_cell(new_row_index, CATALOG_ID_COLUMN_INDEX, catalog_id)
+    GSHEET_BRANDSHEET.update_cell(new_row_index, CATALOG_ID_COLUMN_INDEX, catalog_id)
     return catalog_id
 
 def get_brand_or_catalog_markup(catalog_or_brand: str) -> float:

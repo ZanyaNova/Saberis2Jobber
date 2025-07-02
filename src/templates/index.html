@@ -116,9 +116,9 @@
                                 class="quantity-container" 
                                 :class="{ 'is-disabled': !selectedExportIds.includes(exportItem.saberis_id) }"
                             >
-                                <label :for="'qty-' + exportItem.saberis_id">Qty:</label>
+                                <label :for="'qty-quote-' + exportItem.saberis_id">Qty:</label>
                                 <input
-                                    :id="'qty-' + exportItem.saberis_id"
+                                    :id="'qty-quote-' + exportItem.saberis_id"
                                     type="number"
                                     min="1"
                                     :disabled="!selectedExportIds.includes(exportItem.saberis_id)"
@@ -129,7 +129,7 @@
                                 >
                             </div>
                             <label>
-                                <input type="checkbox" :value="exportItem.saberis_id" x-model="selectedExportIds">
+                                <input type="checkbox" :value="exportItem.saberis_id" x-model="selectedExportIds" @change="updateCatalogsAndCosts()">
                                 <strong x-text="exportItem.customer_name"></strong>
                             </label>
                             <footer>
@@ -142,18 +142,35 @@
                 </section>
 
                 <section>
-                    <h2>2. Set Catalog Mark-up</h2>
-                    <p><i>(Catalog list and editable mark-up fields will go here)</i></p>
+                    <h2>2. Catalogue Mark-up</h2>
+                    <template x-for="catalog in uniqueCatalogs" :key="catalog">
+                        <article class="catalog-card">
+                            <header><strong x-text="catalog"></strong></header>
+                            <div class="markup-container">
+                                <label :for="'markup-' + catalog">Markup %:</label>
+                                <input 
+                                    :id="'markup-' + catalog"
+                                    type="number"
+                                    min="0"
+                                    x-model.number="catalogMarkups[catalog]"
+                                >
+                            </div>
+                            <footer>
+                                <p>Base Cost: <strong x-text="formatCurrency(catalogBaseCosts[catalog] || 0)"></strong></p>
+                                <p>Markup: <strong x-text="formatCurrency(calculateMarkup(catalog))"></strong></p>
+                            </footer>
+                        </article>
+                    </template>
                 </section>
 
                 <aside>
                     <h2>3. Totals</h2>
                     <article>
-                        <p>Base Cost: <strong id="base-cost">$0.00</strong></p>
-                        <p>Total Markup: <strong id="total-markup">$0.00</strong></p>
+                        <p>Base Cost: <strong x-text="formatCurrency(totalBaseCost)"></strong></p>
+                        <p>Total Markup: <strong x-text="formatCurrency(totalMarkup)"></strong></p>
                         <hr>
                         <footer>
-                            <h4>Grand Total: <strong id="grand-total">$0.00</strong></h4>
+                            <h4>Grand Total: <strong x-text="formatCurrency(grandTotal)"></strong></h4>
                         </footer>
                     </article>
                 </aside>
@@ -177,6 +194,20 @@
         border-color: var(--pico-form-element-invalid-border-color);
         background-color: var(--pico-card-background-color);
     }
+    .catalog-card footer p {
+        margin-bottom: 0.5rem;
+    }
+
+    .markup-container {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+    }
+
+    .markup-container input[type="number"] {
+        width: 100px;
+    }
 </style>
 
 <script>
@@ -199,6 +230,23 @@
             selectedQuoteId: null,
             selectedExportIds: [],
             quantities: {}, // e.g., { 'saberis_id_1': 2, 'saberis_id_2': 1 }
+            
+            // Quote Calculation
+            uniqueCatalogs: [],
+            catalogMarkups: {},
+            catalogBaseCosts: {},
+            
+            // Computed Properties for Quote Calculation
+            get totalBaseCost() {
+                return Object.values(this.catalogBaseCosts).reduce((total, cost) => total + cost, 0);
+            },
+            get totalMarkup() {
+                return this.uniqueCatalogs.reduce((total, catalog) => total + this.calculateMarkup(catalog), 0);
+            },
+            get grandTotal() {
+                return this.totalBaseCost + this.totalMarkup;
+            },
+
 
             // Methods
             init() {
@@ -257,6 +305,7 @@
 
             setQuantityFor(saberisId, value) {
                 this.quantities[saberisId] = parseInt(value, 10);
+                this.updateCatalogsAndCosts();
             },
 
             isReadyToSend() {
@@ -264,6 +313,57 @@
                     return false;
                 }
                 return this.selectedExportIds.every(id => this.getQuantityFor(id));
+            },
+            
+            // --- Quote Calculation Methods ---
+            async updateCatalogsAndCosts() {
+                if (this.selectedExportIds.length === 0) {
+                    this.uniqueCatalogs = [];
+                    this.catalogBaseCosts = {};
+                    return;
+                }
+
+                // This is a placeholder for an API call that would fetch the details
+                // for the selected exports. For now, we'll simulate it.
+                // In a real implementation, you would have an endpoint like:
+                // const response = await fetch('/api/export-details', {
+                //     method: 'POST',
+                //     headers: { 'Content-Type': 'application/json' },
+                //     body: JSON.stringify({ export_ids: this.selectedExportIds })
+                // });
+                // const data = await response.json();
+                
+                // Simulated data - replace with actual API call
+                const data = {
+                    "catalogs": ["KWP_24C1", "FWQ0724B"],
+                    "costs": {
+                        "KWP_24C1": 1856.00,
+                        "FWQ0724B": 1200.00
+                    }
+                };
+
+                this.uniqueCatalogs = data.catalogs;
+                
+                const newBaseCosts = {};
+                for (const catalog of this.uniqueCatalogs) {
+                    newBaseCosts[catalog] = (data.costs[catalog] || 0) * (this.quantities[this.selectedExportIds[0]] || 1);
+                }
+
+                this.catalogBaseCosts = newBaseCosts;
+
+            },
+            
+            calculateMarkup(catalog) {
+                const baseCost = this.catalogBaseCosts[catalog] || 0;
+                const markupPercent = this.catalogMarkups[catalog] || 0;
+                return baseCost * (markupPercent / 100);
+            },
+            
+            formatCurrency(amount) {
+                return new Intl.NumberFormat('en-US', {
+                    style: 'currency',
+                    currency: 'USD',
+                }).format(amount);
             },
 
             async sendToJobber() {
@@ -317,10 +417,6 @@
                 } finally {
                     this.isSending = false;
                 }
-            },
-
-            isReadyToSetMarkup(){
-                return false
             },
 
         };
