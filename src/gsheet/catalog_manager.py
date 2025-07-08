@@ -66,6 +66,7 @@ class CatalogManager:
                     pass
             
             cache[catalog_id] = (brand, markup)
+            print(catalog_id + " | " + brand + " = " + str(markup))
         
         self._cache = cache
         self.last_updated = time.time()
@@ -88,6 +89,7 @@ class CatalogManager:
         self._ensure_fresh()
         # The markup is the second item.
         # If catalog_id not in cache, default tuple's 2nd item is DEFAULT_MARKUP.
+        print("===Markup=== " + str(self._cache.get(catalog_id, ( "", DEFAULT_MARKUP)))[1])
         return self._cache.get(catalog_id, ( "", DEFAULT_MARKUP))[1]
 
     def set_markup(self, catalog_id: str, markup: float) -> bool:

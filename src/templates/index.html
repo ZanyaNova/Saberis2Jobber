@@ -242,12 +242,11 @@
             catalogBaseCosts: {},
             originalMarkups: {}, 
 
-            // --- NEW: Helper to format numbers for display ---
             formatForDisplay(num, maxDecimals = 3) {
                 if (typeof num !== 'number') return num;
-                // Round to a fixed number of decimals to handle precision errors, then convert back to a number
-                // to automatically strip trailing zeros (e.g., 3.500 -> 3.5)
-                return Number(num.toFixed(maxDecimals));
+                const factor = Math.pow(10, maxDecimals);
+                const rounded = Math.round(num * factor) / factor;
+                return Number(rounded.toFixed(maxDecimals));
             },
 
             nearlyEquals(a, b, epsilon = 0.001) {
@@ -357,11 +356,14 @@
             },
             
             async updateCatalogsAndCosts() {
+                console.log("-> 1. updateCatalogsAndCosts called.");
+
                 if (this.selectedExportIds.length === 0) {
                     this.uniqueCatalogs = [];
                     this.catalogBaseCosts = {};
-                    this.catalogMarkups = {}; 
+                    this.catalogMarkups = {};
                     this.originalMarkups = {};
+                    console.log("   - No exports selected. Clearing data.");
                     return;
                 }
 
@@ -371,42 +373,69 @@
 
                 const newUniqueCatalogs = new Set();
                 const newBaseCosts = {};
-                const markupsToFetch = {};
 
                 for (const exp of selectedExports) {
                     const quantity = this.quantities[exp.saberis_id] || 1;
                     for (const catalog in (exp.costs_by_catalog || {})) {
                         newUniqueCatalogs.add(catalog);
                         const costForCatalog = exp.costs_by_catalog[catalog] || 0;
-                        if (!newBaseCosts[catalog]) {
-                            newBaseCosts[catalog] = 0;
-                        }
-                        newBaseCosts[catalog] += costForCatalog * quantity;
+                        newBaseCosts[catalog] = (newBaseCosts[catalog] || 0) + (costForCatalog * quantity);
                     }
                 }
 
                 this.uniqueCatalogs = Array.from(newUniqueCatalogs).sort();
                 this.catalogBaseCosts = newBaseCosts;
                 
-                for (const catalog of this.uniqueCatalogs) {
-                    if (this.catalogMarkups[catalog] === undefined) {
-                        try {
-                            const response = await fetch(`/api/catalog-markup/${catalog}`);
-                            const data = await response.json();
-                            // --- MODIFIED: Use the new display formatter here ---
-                            markupsToFetch[catalog] = this.formatForDisplay(data.markup * 100);
-                        } catch (error) {
-                            console.error(`Error fetching markup for ${catalog}:`, error);
-                            markupsToFetch[catalog] = 3.5; 
+                const catalogsToFetch = this.uniqueCatalogs.filter(
+                    catalog => this.originalMarkups[catalog] === undefined
+                );
+
+                console.log("-> 2. Catalogs identified for fetching:", catalogsToFetch);
+
+                if (catalogsToFetch.length > 0) {
+                    const fetchPromises = catalogsToFetch.map(catalog =>
+                        fetch(`/api/catalog-markup/${catalog}`)
+                            .then(response => {
+                                if (!response.ok) {
+                                    return response.json().then(err => Promise.reject({ catalog, error: err }));
+                                }
+                                return response.json();
+                            })
+                            .then(data => ({ catalog: data.catalog_id, success: true, markup: data.markup }))
+                            .catch(errorInfo => {
+                                console.error(`   - Fetch FAILED for ${errorInfo.catalog}:`, errorInfo.error || errorInfo);
+                                return { catalog: errorInfo.catalog, success: false };
+                            })
+                    );
+                    
+                    console.log("-> 3. Waiting for all fetch promises to resolve...");
+                    // --- THIS IS THE FIX ---
+                    const results = await Promise.all(fetchPromises);
+                    // --- END FIX ---
+
+                    console.log("-> 4. All promises resolved. Results:", results);
+
+                    for (const result of results) {
+                        if (result.success) {
+                            const markupPercent = this.formatForDisplay(result.markup * 100);
+                            console.log(`   - SUCCESS for ${result.catalog}. Setting live and pristine markup to:`, markupPercent);
+                            this.catalogMarkups[result.catalog] = markupPercent;
+                            this.originalMarkups[result.catalog] = markupPercent;
+                        } else {
+                            console.log(`   - FAILED for ${result.catalog}. Setting live markup to fallback 3.5.`);
+                            this.catalogMarkups[result.catalog] = 3.5;
                         }
-                    } else {
-                        markupsToFetch[catalog] = this.catalogMarkups[catalog];
                     }
+                } else {
+                    console.log("-> 2a. No new catalogs to fetch.");
                 }
-                this.catalogMarkups = { ...markupsToFetch };
-                this.originalMarkups = { ...markupsToFetch };
+
+                console.log("-> 5. Final state:", {
+                    markups: this.catalogMarkups,
+                    originals: this.originalMarkups
+                });
             },
-            
+
             calculateMarkup(catalog) {
                 const baseCost = this.catalogBaseCosts[catalog] || 0;
                 const markupPercent = this.catalogMarkups[catalog] || 0;
