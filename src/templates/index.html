@@ -80,9 +80,6 @@
 
                         <aside :class="isReadyToSend() ? 'content-visible' : 'content-hidden'">
                             <h3>3. Actions</h3>
-                            <button @click="openQuoteCalculator()">
-                                <span x-show="!isSending">Calculate Quote</span>
-                            </button>
                             <button @click="sendToJobber()" :disabled="!isReadyToSend() || isSending">
                                 <span x-show="!isSending">Send Items to Jobber</span>
                                 <span x-show="isSending" aria-busy="true">Sending...</span>
