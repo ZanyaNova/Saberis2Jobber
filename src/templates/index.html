@@ -75,6 +75,9 @@
                             <div x-show="totalSaberisPages > 1" class="pagination-controls">
                                 <button @click="saberisCurrentPage--" :disabled="saberisCurrentPage === 1">&lt; Prev</button>
                                 <span x-text="`Page ${saberisCurrentPage} of ${totalSaberisPages}`"></span>
+                                <button @click="pruneExports()" class="outline" style="float: right; padding: 2px 8px; font-size: 0.8em;">
+                                    Delete Old
+                                </button>
                                 <button @click="saberisCurrentPage++" :disabled="saberisCurrentPage === totalSaberisPages">Next &gt;</button>
                             </div>
                         </section>
@@ -117,6 +120,9 @@
                             <div x-show="totalSaberisPages > 1" class="pagination-controls">
                                 <button @click="saberisCurrentPage--" :disabled="saberisCurrentPage === 1">&lt; Prev</button>
                                 <span x-text="`Page ${saberisCurrentPage} of ${totalSaberisPages}`"></span>
+                                <button @click="pruneExports()" class="outline" style="float: right; padding: 2px 8px; font-size: 0.8em;">
+                                    Delete Old
+                                </button>
                                 <button @click="saberisCurrentPage++" :disabled="saberisCurrentPage === totalSaberisPages">Next &gt;</button>
                             </div>
                         </section>
@@ -230,7 +236,7 @@
             saveState: 'clean', // States: 'clean', 'dirty', 'saving', 'saved and clean'
             
             // Configuration
-            itemsPerPage: 5,
+            itemsPerPage: 3,
 
             get paginatedJobberQuotes() {
                 const start = (this.jobberCurrentPage - 1) * this.itemsPerPage;
@@ -545,6 +551,31 @@
                     alert(`An error occurred: ${error.message}`);
                 } finally {
                     this.isSending = false;
+                }
+            },
+
+            async pruneExports() {
+                if (!confirm('Delete all saberis exports except the 3 most recent?')) {
+                    return;
+                }
+                
+                this.isLoading = true;
+                try {
+                    const response = await fetch('/api/saberis-exports/prune', {
+                        method: 'POST',
+                    });
+                    const result = await response.json();
+                    if (!response.ok) {
+                        throw new Error(result.error || 'Failed to prune exports.');
+                    }
+                    alert(result.message);
+                    // Refresh the list of exports from the server
+                    await this.refreshExports();
+                } catch (error) {
+                    console.error("Error pruning Saberis exports:", error);
+                    alert(`An error occurred: ${error.message}`);
+                } finally {
+                    this.isLoading = false;
                 }
             },
         };

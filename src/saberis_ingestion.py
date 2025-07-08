@@ -124,3 +124,48 @@ def ingest_saberis_exports() -> List[SaberisExportRecord]:
     manifest.sort(key=lambda record: record['ingested_at'], reverse=True)
     
     return manifest
+
+def prune_saberis_exports(keep_count: int = 3) -> int:
+    """
+    Deletes the oldest Saberis export records and their corresponding files,
+    keeping only the specified number of most recent records.
+
+    Args:
+        keep_count: The number of recent exports to keep.
+
+    Returns:
+        The number of records that were pruned.
+    """
+    if not os.path.exists(MANIFEST_FILE):
+        return 0
+
+    with open(MANIFEST_FILE, 'r') as f:
+        manifest: List[SaberisExportRecord] = json.load(f)
+
+    if len(manifest) <= keep_count:
+        return 0
+
+    # Sort by ingested_at date, descending (newest first)
+    manifest.sort(key=lambda record: record['ingested_at'], reverse=True)
+
+    records_to_keep = manifest[:keep_count]
+    records_to_prune = manifest[keep_count:]
+    
+    pruned_count = 0
+    for record in records_to_prune:
+        try:
+            stored_path = record.get("stored_path")
+            if stored_path and os.path.exists(stored_path):
+                os.remove(stored_path)
+                print(f"Deleted export file: {stored_path}")
+            pruned_count += 1
+        except OSError as e:
+            print(f"Error deleting file {record.get('stored_path')}: {e}")
+            # We'll continue trying to update the manifest even if a file deletion fails
+
+    # Save the pruned list back to the manifest
+    with open(MANIFEST_FILE, 'w') as f:
+        json.dump(records_to_keep, f, indent=4)
+
+    print(f"Pruned {pruned_count} old export records from the manifest.")
+    return pruned_count

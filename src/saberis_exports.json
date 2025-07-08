@@ -1,33 +1,11 @@
 [
     {
-        "saberis_id": "b7431bda-aa0c-42a7-8407-59f08dc7b27e",
-        "original_filename": "sample_order_1.json",
-        "stored_path": "C:\\Coding Projects\\Kiah\\Saberis2Jobber\\src\\processed_exports\\b7431bda-aa0c-42a7-8407-59f08dc7b27e.json",
-        "ingested_at": "2025-06-21T14:02:46.326792",
-        "export_date": "2025.06.07",
+        "saberis_id": "5a59324e-f3a7-428c-b0a9-45cefa88bb79",
+        "original_filename": "b3853065-2424-4c4a-bdcf-7a56ed88bcd7",
+        "stored_path": "C:\\Coding Projects\\Kiah\\Saberis2Jobber\\src\\processed_exports\\5a59324e-f3a7-428c-b0a9-45cefa88bb79.json",
+        "ingested_at": "2025-07-08T16:40:57.406861",
+        "export_date": "2025.07.08",
         "customer_name": "Affinity",
-        "username": "KiahHochstetler",
-        "shipping_address": "552 Wilcox Ln, Corvallis, MT",
-        "sent_to_jobber": false
-    },
-    {
-        "saberis_id": "d86f476e-0da6-43ca-949f-b6d97e8002b9",
-        "original_filename": "sample_order_1.json",
-        "stored_path": "C:\\Coding Projects\\Kiah\\Saberis2Jobber\\src\\processed_exports\\d86f476e-0da6-43ca-949f-b6d97e8002b9.json",
-        "ingested_at": "2025-06-29T17:05:06.637587",
-        "export_date": "2025.06.07",
-        "customer_name": "",
-        "username": "KiahHochstetler",
-        "shipping_address": "552 Wilcox Ln, Corvallis, MT",
-        "sent_to_jobber": false
-    },
-    {
-        "saberis_id": "bab6bc1a-281a-4f04-be57-87a28b58eb63",
-        "original_filename": "example3.json",
-        "stored_path": "C:\\Coding Projects\\Kiah\\Saberis2Jobber\\src\\processed_exports\\bab6bc1a-281a-4f04-be57-87a28b58eb63.json",
-        "ingested_at": "2025-07-01T15:59:43.182988",
-        "export_date": "2025.07.01",
-        "customer_name": "",
         "username": "KiahHochstetler",
         "shipping_address": "",
         "sent_to_jobber": false
@@ -44,12 +22,12 @@
         "sent_to_jobber": false
     },
     {
-        "saberis_id": "5a59324e-f3a7-428c-b0a9-45cefa88bb79",
-        "original_filename": "b3853065-2424-4c4a-bdcf-7a56ed88bcd7",
-        "stored_path": "C:\\Coding Projects\\Kiah\\Saberis2Jobber\\src\\processed_exports\\5a59324e-f3a7-428c-b0a9-45cefa88bb79.json",
-        "ingested_at": "2025-07-08T16:40:57.406861",
-        "export_date": "2025.07.08",
-        "customer_name": "Affinity",
+        "saberis_id": "bab6bc1a-281a-4f04-be57-87a28b58eb63",
+        "original_filename": "example3.json",
+        "stored_path": "C:\\Coding Projects\\Kiah\\Saberis2Jobber\\src\\processed_exports\\bab6bc1a-281a-4f04-be57-87a28b58eb63.json",
+        "ingested_at": "2025-07-01T15:59:43.182988",
+        "export_date": "2025.07.01",
+        "customer_name": "",
         "username": "KiahHochstetler",
         "shipping_address": "",
         "sent_to_jobber": false

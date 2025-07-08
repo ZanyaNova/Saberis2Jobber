@@ -134,7 +134,18 @@ def get_saberis_exports():
             
     return jsonify(enriched_records)
 
-
+@app.route('/api/saberis-exports/prune', methods=['POST'])
+def prune_saberis_exports_route():
+    """
+    API endpoint to prune old Saberis exports, keeping only the most recent ones.
+    """
+    from .saberis_ingestion import prune_saberis_exports
+    try:
+        pruned_count = prune_saberis_exports(keep_count=3)
+        return jsonify({"message": f"Successfully deleted {pruned_count} old export(s)."})
+    except Exception as e:
+        print(f"ERROR: Could not prune Saberis exports: {e}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/send-to-jobber', methods=['POST'])
 def send_to_jobber():
