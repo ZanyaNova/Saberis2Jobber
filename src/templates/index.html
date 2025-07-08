@@ -144,9 +144,13 @@
                 <section>
                     <h3>
                         2. Catalogue Mark-up
-                        <button x-show="isMarkupDirty()" @click="saveMarkups()" style="float: right; padding: 5px 10px; font-size: 0.8em; font-weight: 80;">
-                            Save
-                        </button>
+                        <span style="float: right; font-size: 0.8em; font-weight: normal; min-width: 60px; text-align: right; display: inline-block;">
+                            <button x-show="saveState === 'dirty'" @click="saveMarkups()" style="padding: 5px 10px; font-size: 1em; font-weight: bold; margin: 0;">
+                                Save
+                            </button>
+                            <span x-show="saveState === 'saving'" aria-busy="true" style="font-size: smaller;">Saving...</span>
+                            <strong x-show="saveState === 'saved and clean'" style="color: var(--pico-color-green-500);">Saved!</strong>
+                        </span>
                     </h3>
                     <template x-for="catalog in uniqueCatalogs" :key="catalog">
                         <article class="catalog-card">
@@ -158,6 +162,7 @@
                                     type="number"
                                     min="0"
                                     x-model.number="catalogMarkups[catalog]"
+                                    @input="onMarkupInputChange()"
                                 >
                             </div>
                             <footer>
@@ -241,6 +246,8 @@
             catalogMarkups: {},
             catalogBaseCosts: {},
             originalMarkups: {}, 
+            saveState: 'clean', // States: 'clean', 'dirty', 'saving', 'saved and clean'
+
 
             formatForDisplay(num, maxDecimals = 3) {
                 if (typeof num !== 'number') return num;
@@ -355,7 +362,20 @@
                 return this.selectedExportIds.every(id => this.getQuantityFor(id));
             },
             
+            onMarkupInputChange() {
+                if (this.saveState === 'clean' || this.saveState === 'saved and clean') {
+                    this.saveState = 'dirty';
+                }
+            },
+
             async updateCatalogsAndCosts() {
+
+                if (this.isMarkupDirty()) {
+                    if (this.saveState === 'clean' || this.saveState === 'saved and clean') {
+                        this.saveState = 'dirty';
+                    }
+                }
+
                 console.log("-> 1. updateCatalogsAndCosts called.");
 
                 if (this.selectedExportIds.length === 0) {
@@ -409,9 +429,7 @@
                     );
                     
                     console.log("-> 3. Waiting for all fetch promises to resolve...");
-                    // --- THIS IS THE FIX ---
                     const results = await Promise.all(fetchPromises);
-                    // --- END FIX ---
 
                     console.log("-> 4. All promises resolved. Results:", results);
 
@@ -450,10 +468,26 @@
             },
 
             async saveMarkups() {
+                this.saveState = 'saving'
                 const markupsToSave = {};
+                
                 for (const catalog of this.uniqueCatalogs) {
-                    markupsToSave[catalog] = (this.catalogMarkups[catalog] || 0) / 100;
+                    const currentValue = this.catalogMarkups[catalog];
+                    const originalValue = this.originalMarkups[catalog];
+
+                    // Only add the markup to the payload if it has been changed
+                    // from the value that was originally loaded.
+                    if (!this.nearlyEquals(currentValue, originalValue)) {
+                        markupsToSave[catalog] = (currentValue || 0) / 100;
+                    }
                 }
+
+                // If no markups have been changed, inform the user and exit.
+                if (Object.keys(markupsToSave).length === 0) {
+                    this.saveState = 'clean'
+                    return;
+                }
+
                 try {
                     const response = await fetch('/api/catalog-markups', {
                         method: 'POST',
@@ -464,11 +498,15 @@
                     if (!response.ok) {
                         throw new Error(result.error || 'Failed to save markups.');
                     }
-                    alert('Markups saved successfully!');
+                    
+                    // After a successful save, update the 'originalMarkups' to reflect
+                    // the new state, so the "dirty" check resets.
                     this.originalMarkups = { ...this.catalogMarkups };
+                    this.saveState = 'saved and clean';
+
                 } catch (error) {
                     console.error("Error saving markups:", error);
-                    alert(`An error occurred while saving: ${error.message}`);
+                    this.saveState = 'dirty'
                 }
             },
 
