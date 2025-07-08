@@ -133,7 +133,7 @@
                                 <span style="float: right; font-size: 0.8em; font-weight: normal; min-width: 60px; text-align: right; display: inline-block;">
                                     <button x-show="saveState === 'dirty'" @click="saveMarkups()" style="padding: 5px 10px; font-size: 1em; font-weight: bold; margin: 0;">Save</button>
                                     <span x-show="saveState === 'saving'" aria-busy="true" style="font-size: smaller;">Saving...</span>
-                                    <strong x-show="saveState === 'saved and clean'" style="color: var(--pico-color-green-500);">Saved!</strong>
+                                    <span x-show="saveState === 'saved and clean'" style="color: green; font-size: smaller;">Saved!</span>
                                 </span>
                             </h3>
                             <template x-for="catalog in uniqueCatalogs" :key="catalog">
