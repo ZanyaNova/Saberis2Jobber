@@ -66,3 +66,33 @@ article.export-card {
 .task-switcher button:not([class*="contrast"]):hover {
     --pico-background-color: var(--pico-table-row-striping-background-color);
 }
+
+.scrollable-list {
+    max-height: 70vh; /* Sets the maximum height to 70% of the viewport height */
+    overflow-y: auto; /* Adds a vertical scrollbar only when content overflows */
+    padding: 0.5rem;  /* Adds a little space inside the container */
+    border-radius: var(--pico-card-border-radius);
+}
+
+.pagination-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: .5rem;
+}
+
+.catalog-card .card-body {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end; /* Changed from center to flex-end */
+    gap: .5rem;
+}
+
+.catalog-card .cost-details {
+    text-align: right;
+    flex-shrink: 0; /* Prevents this container from shrinking if space is tight */
+}
+
+.catalog-card .cost-details p {
+    margin: 0;
+}

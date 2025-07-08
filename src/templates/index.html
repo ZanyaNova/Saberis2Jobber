@@ -4,6 +4,7 @@
 <div x-data="saberisDashboard()" x-init="init()">
     
     <div class="container">
+        
         <template x-if="jobberAuthStatus === 'checking'">
             <article aria-busy="true">Checking authorization, please wait...</article>
         </template>
@@ -21,61 +22,61 @@
         </template>
 
         <template x-if="jobberAuthStatus === 'authorized'">
-            <div> <div class="task-switcher">
+            <div>
+                <div class="task-switcher">
                     <h2>Select Task:</h2>
                     <button @click="currentTask = 'calculateQuote'" :class="{ 'contrast': currentTask === 'calculateQuote' }">Calculate Quote</button>
                     <button @click="currentTask = 'sendToJobber'" :class="{ 'contrast': currentTask === 'sendToJobber' }">Send items to Jobber</button>
-                    </br>
-                    </br>
+                    <br><br>
                 </div>
 
                 <template x-if="currentTask === 'sendToJobber'">
                     <div class="grid">
                         <section>
                             <h3>1. Select Jobber Quote</h3>
-                            <template x-for="quote in jobberQuotes" :key="quote.id">
-                                <article @click="selectedQuoteId = quote.id" :class="{ 'selected-card': selectedQuoteId === quote.id }" style="cursor: pointer;">
-                                    <h4 x-text="quote.client_name"></h4>
-                                    <footer>
-                                        <small x-text="quote.shipping_address"></small></br>
-                                        <small x-text="`Approved on: ${quote.approved_date}`" class="exported-by-label"></small>
-                                    </footer>
-                                </article>
-                            </template>
-                            <div x-show="hasNextPage && jobberAuthStatus === 'authorized'">
-                                <button @click="fetchJobberQuotes()" :disabled="isLoadingQuotes">
-                                    <span x-show="!isLoadingQuotes">Load More...</span>
-                                    <span x-show="isLoadingQuotes" aria-busy="true">Loading...</span>
-                                </button>
+                            <div class="scrollable-list">
+                                <template x-for="quote in paginatedJobberQuotes" :key="quote.id">
+                                    <article @click="selectedQuoteId = quote.id" :class="{ 'selected-card': selectedQuoteId === quote.id }" style="cursor: pointer;">
+                                        <h4 x-text="quote.client_name"></h4>
+                                        <footer>
+                                            <small x-text="quote.shipping_address"></small><br>
+                                            <small x-text="`Approved on: ${quote.approved_date}`" class="exported-by-label"></small>
+                                        </footer>
+                                    </article>
+                                </template>
+                            </div>
+                            <div x-show="totalJobberPages > 1" class="pagination-controls">
+                                <button @click="jobberCurrentPage--" :disabled="jobberCurrentPage === 1">&lt; Prev</button>
+                                <span x-text="`Page ${jobberCurrentPage} of ${totalJobberPages}`"></span>
+                                <button @click="jobberCurrentPage++" :disabled="jobberCurrentPage === totalJobberPages">Next &gt;</button>
                             </div>
                         </section>
 
                         <section :class="selectedQuoteId ? 'content-visible' : 'content-hidden'">
                             <h3>2. Select Design(s) & Qty</h3>
-                            <template x-for="exportItem in saberisExports" :key="exportItem.saberis_id">
-                                <article :class="{ 'selected-export': selectedExportIds.includes(exportItem.saberis_id) }" class="export-card">
-                                    <div class="quantity-container" :class="{ 'is-disabled': !selectedExportIds.includes(exportItem.saberis_id) }">
-                                        <label :for="'qty-' + exportItem.saberis_id">Qty:</label>
-                                        <input
-                                            :id="'qty-' + exportItem.saberis_id"
-                                            type="number"
-                                            min="1"
-                                            :disabled="!selectedExportIds.includes(exportItem.saberis_id)"
-                                            @input="setQuantityFor(exportItem.saberis_id, $event.target.value)"
-                                            :value="quantities[exportItem.saberis_id] || ''"
-                                            :aria-invalid="selectedExportIds.includes(exportItem.saberis_id) && !getQuantityFor(exportItem.saberis_id)"
-                                        >
-                                    </div>
-                                    <label>
-                                        <input type="checkbox" :value="exportItem.saberis_id" x-model="selectedExportIds">
-                                        <strong x-text="exportItem.customer_name"></strong>
-                                    </label>
-                                    <footer>
-                                        <small x-text="exportItem.shipping_address"></small> </br>
-                                        <small x-text="`Exported by: ${exportItem.username} on ${exportItem.export_date}`" class="exported-by-label"></small>
-                                    </footer>
-                                </article>
-                            </template>
+                            <div class="scrollable-list">
+                                <template x-for="exportItem in paginatedSaberisExports" :key="exportItem.saberis_id">
+                                    <article :class="{ 'selected-export': selectedExportIds.includes(exportItem.saberis_id) }" class="export-card">
+                                        <div class="quantity-container" :class="{ 'is-disabled': !selectedExportIds.includes(exportItem.saberis_id) }">
+                                            <label :for="'qty-' + exportItem.saberis_id">Qty:</label>
+                                            <input :id="'qty-' + exportItem.saberis_id" type="number" min="1" :disabled="!selectedExportIds.includes(exportItem.saberis_id)" @input="setQuantityFor(exportItem.saberis_id, $event.target.value)" :value="quantities[exportItem.saberis_id] || ''" :aria-invalid="selectedExportIds.includes(exportItem.saberis_id) && !getQuantityFor(exportItem.saberis_id)">
+                                        </div>
+                                        <label>
+                                            <input type="checkbox" :value="exportItem.saberis_id" x-model="selectedExportIds">
+                                            <strong x-text="exportItem.customer_name"></strong>
+                                        </label>
+                                        <footer>
+                                            <small x-text="exportItem.shipping_address"></small><br>
+                                            <small x-text="`Exported by: ${exportItem.username} on ${exportItem.export_date}`" class="exported-by-label"></small>
+                                        </footer>
+                                    </article>
+                                </template>
+                            </div>
+                            <div x-show="totalSaberisPages > 1" class="pagination-controls">
+                                <button @click="saberisCurrentPage--" :disabled="saberisCurrentPage === 1">&lt; Prev</button>
+                                <span x-text="`Page ${saberisCurrentPage} of ${totalSaberisPages}`"></span>
+                                <button @click="saberisCurrentPage++" :disabled="saberisCurrentPage === totalSaberisPages">Next &gt;</button>
+                            </div>
                         </section>
 
                         <aside :class="isReadyToSend() ? 'content-visible' : 'content-hidden'">
@@ -95,39 +96,36 @@
                     <div class="grid">
                         <section>
                             <h3>1. Select Design(s) & Qty</h3>
-                            <template x-for="exportItem in saberisExports" :key="exportItem.saberis_id">
-                                <article :class="{ 'selected-export': selectedExportIds.includes(exportItem.saberis_id) }" class="export-card">
-                                    <div class="quantity-container" :class="{ 'is-disabled': !selectedExportIds.includes(exportItem.saberis_id) }">
-                                        <label :for="'qty-quote-' + exportItem.saberis_id">Qty:</label>
-                                        <input
-                                            :id="'qty-quote-' + exportItem.saberis_id"
-                                            type="number"
-                                            min="1"
-                                            :disabled="!selectedExportIds.includes(exportItem.saberis_id)"
-                                            @input="setQuantityFor(exportItem.saberis_id, $event.target.value)"
-                                            :value="quantities[exportItem.saberis_id] || ''"
-                                            :aria-invalid="selectedExportIds.includes(exportItem.saberis_id) && !getQuantityFor(exportItem.saberis_id)"
-                                        >
-                                    </div>
-                                    <label>
-                                        <input type="checkbox" :value="exportItem.saberis_id" x-model="selectedExportIds" @change="updateCatalogsAndCosts()">
-                                        <strong x-text="exportItem.customer_name"></strong>
-                                    </label>
-                                    <footer>
-                                        <small x-text="exportItem.shipping_address"></small> </br>
-                                        <small x-text="`Exported by: ${exportItem.username} on ${exportItem.export_date}`" class="exported-by-label"></small>
-                                    </footer>
-                                </article>
-                            </template>
+                             <div class="scrollable-list">
+                                <template x-for="exportItem in paginatedSaberisExports" :key="exportItem.saberis_id">
+                                    <article :class="{ 'selected-export': selectedExportIds.includes(exportItem.saberis_id) }" class="export-card">
+                                        <div class="quantity-container" :class="{ 'is-disabled': !selectedExportIds.includes(exportItem.saberis_id) }">
+                                            <label :for="'qty-quote-' + exportItem.saberis_id">Qty:</label>
+                                            <input :id="'qty-quote-' + exportItem.saberis_id" type="number" min="1" :disabled="!selectedExportIds.includes(exportItem.saberis_id)" @input="setQuantityFor(exportItem.saberis_id, $event.target.value)" :value="quantities[exportItem.saberis_id] || ''" :aria-invalid="selectedExportIds.includes(exportItem.saberis_id) && !getQuantityFor(exportItem.saberis_id)">
+                                        </div>
+                                        <label>
+                                            <input type="checkbox" :value="exportItem.saberis_id" x-model="selectedExportIds" @change="updateCatalogsAndCosts()">
+                                            <strong x-text="exportItem.customer_name"></strong>
+                                        </label>
+                                        <footer>
+                                            <small x-text="exportItem.shipping_address"></small><br>
+                                            <small x-text="`Exported by: ${exportItem.username} on ${exportItem.export_date}`" class="exported-by-label"></small>
+                                        </footer>
+                                    </article>
+                                </template>
+                            </div>
+                            <div x-show="totalSaberisPages > 1" class="pagination-controls">
+                                <button @click="saberisCurrentPage--" :disabled="saberisCurrentPage === 1">&lt; Prev</button>
+                                <span x-text="`Page ${saberisCurrentPage} of ${totalSaberisPages}`"></span>
+                                <button @click="saberisCurrentPage++" :disabled="saberisCurrentPage === totalSaberisPages">Next &gt;</button>
+                            </div>
                         </section>
 
                         <section>
                             <h3>
                                 2. Catalogue Mark-up
                                 <span style="float: right; font-size: 0.8em; font-weight: normal; min-width: 60px; text-align: right; display: inline-block;">
-                                    <button x-show="saveState === 'dirty'" @click="saveMarkups()" style="padding: 5px 10px; font-size: 1em; font-weight: bold; margin: 0;">
-                                        Save
-                                    </button>
+                                    <button x-show="saveState === 'dirty'" @click="saveMarkups()" style="padding: 5px 10px; font-size: 1em; font-weight: bold; margin: 0;">Save</button>
                                     <span x-show="saveState === 'saving'" aria-busy="true" style="font-size: smaller;">Saving...</span>
                                     <strong x-show="saveState === 'saved and clean'" style="color: var(--pico-color-green-500);">Saved!</strong>
                                 </span>
@@ -135,20 +133,22 @@
                             <template x-for="catalog in uniqueCatalogs" :key="catalog">
                                 <article class="catalog-card">
                                     <header><strong x-text="catalog"></strong></header>
-                                    <div class="markup-container">
-                                        <label :for="'markup-' + catalog">% Markup:</label>
-                                        <input 
-                                            :id="'markup-' + catalog"
-                                            type="number"
-                                            min="0"
-                                            x-model.number="catalogMarkups[catalog]"
-                                            @input="onMarkupInputChange()"
-                                        >
+                                    <div class="card-body">
+                                        <div class="markup-container">
+                                            <input 
+                                            :id="'markup-' + catalog" 
+                                            type="number" 
+                                            min="0" 
+                                            x-model.number="catalogMarkups[catalog]" 
+                                            @input="onMarkupInputChange()">
+                                            <label :for="'markup-' + catalog">%</label>
+                                        </div>
+
+                                        <div class="cost-details">
+                                            <p>Base: <strong x-text="formatCurrency(catalogBaseCosts[catalog] || 0)"></strong></p>
+                                            <p>Markup: <strong x-text="formatCurrency(calculateMarkup(catalog))"></strong></p>
+                                        </div>
                                     </div>
-                                    <footer>
-                                        <p>Base Cost: <strong x-text="formatCurrency(catalogBaseCosts[catalog] || 0)"></strong></p>
-                                        <p>Markup: <strong x-text="formatCurrency(calculateMarkup(catalog))"></strong></p>
-                                    </footer>
                                 </article>
                             </template>
                         </section>
@@ -169,7 +169,6 @@
             </div>
         </template>
     </div>
-</div>
 
 <style>
     .selected-card, .selected-export {
@@ -192,8 +191,7 @@
     .markup-container {
         display: flex;
         align-items: center;
-        gap: 0.5rem;
-        margin-bottom: 1rem;
+        gap: 0.2rem;
     }
 
     .markup-container input[type="number"] {
@@ -215,12 +213,14 @@
             jobberQuotes: [],
             nextCursor: null,
             hasNextPage: false,
+            jobberCurrentPage: 1,
 
             // Saberis
             saberisExports: [],
             selectedQuoteId: null,
             selectedExportIds: [],
             quantities: {},
+            saberisCurrentPage: 1,
             
             // Quote Calculation
             uniqueCatalogs: [],
@@ -228,7 +228,26 @@
             catalogBaseCosts: {},
             originalMarkups: {}, 
             saveState: 'clean', // States: 'clean', 'dirty', 'saving', 'saved and clean'
+            
+            // Configuration
+            itemsPerPage: 5,
 
+            get paginatedJobberQuotes() {
+                const start = (this.jobberCurrentPage - 1) * this.itemsPerPage;
+                const end = start + this.itemsPerPage;
+                return this.jobberQuotes.slice(start, end);
+            },
+            get totalJobberPages() {
+                return Math.ceil(this.jobberQuotes.length / this.itemsPerPage);
+            },
+            get paginatedSaberisExports() {
+                const start = (this.saberisCurrentPage - 1) * this.itemsPerPage;
+                const end = start + this.itemsPerPage;
+                return this.saberisExports.slice(start, end);
+            },
+            get totalSaberisPages() {
+                return Math.ceil(this.saberisExports.length / this.itemsPerPage);
+            },
 
             formatForDisplay(num, maxDecimals = 3) {
                 if (typeof num !== 'number') return num;
