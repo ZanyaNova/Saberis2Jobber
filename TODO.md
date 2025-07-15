@@ -13,9 +13,9 @@ FINISH IMPLEMENTING QUOTES TASK
 - Investigate products and services not adding
 - Get modified cabinet test file
 - Think about ways to make modified cabinet clear (IF ITS NOT CLEAR FROM TESTSING)
+- Break mod codes up into mod N. Keep code in jobber name, and then put the "Mod N: #####" into the description itself.
 
-
-ADD VOLUME BACK IN (check w Kiah why)
+VOLUME
 Volume is for quoting
 Volume should be sensitive to the "ignore catalog" function. Simply sum and add to total.
 

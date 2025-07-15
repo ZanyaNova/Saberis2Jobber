@@ -1,42 +1,9 @@
 [
     {
-        "saberis_id": "5a59324e-f3a7-428c-b0a9-45cefa88bb79",
-        "original_filename": "b3853065-2424-4c4a-bdcf-7a56ed88bcd7",
-        "stored_path": "C:\\Coding Projects\\Kiah\\Saberis2Jobber\\src\\processed_exports\\5a59324e-f3a7-428c-b0a9-45cefa88bb79.json",
-        "ingested_at": "2025-07-08T16:40:57.406861",
-        "export_date": "2025.07.08",
-        "customer_name": "Affinity",
-        "username": "KiahHochstetler",
-        "shipping_address": "",
-        "sent_to_jobber": false
-    },
-    {
-        "saberis_id": "52c550d2-a0f3-4bfa-a445-c96589672971",
-        "original_filename": "0662b1c4-3b6d-437a-bfab-ccb2f3e5597f",
-        "stored_path": "C:\\Coding Projects\\Kiah\\Saberis2Jobber\\src\\processed_exports\\52c550d2-a0f3-4bfa-a445-c96589672971.json",
-        "ingested_at": "2025-07-08T16:36:51.661419",
-        "export_date": "2025.07.08",
-        "customer_name": "",
-        "username": "KiahHochstetler",
-        "shipping_address": "",
-        "sent_to_jobber": false
-    },
-    {
-        "saberis_id": "bab6bc1a-281a-4f04-be57-87a28b58eb63",
-        "original_filename": "example3.json",
-        "stored_path": "C:\\Coding Projects\\Kiah\\Saberis2Jobber\\src\\processed_exports\\bab6bc1a-281a-4f04-be57-87a28b58eb63.json",
-        "ingested_at": "2025-07-01T15:59:43.182988",
-        "export_date": "2025.07.01",
-        "customer_name": "",
-        "username": "KiahHochstetler",
-        "shipping_address": "",
-        "sent_to_jobber": false
-    },
-    {
-        "saberis_id": "7776d0a8-4b35-4c5a-bd4a-b2c64250e965",
-        "original_filename": "214356e0-9ac2-46d5-8aca-43e9649d2f98",
-        "stored_path": "C:\\Coding Projects\\Kiah\\Saberis2Jobber\\src\\processed_exports\\7776d0a8-4b35-4c5a-bd4a-b2c64250e965.json",
-        "ingested_at": "2025-07-14T20:09:40.906736",
+        "saberis_id": "296a4b59-9f07-4d7a-9590-d580860e32a6",
+        "original_filename": "0d6b5af9-3e54-4591-85a2-ad09d0f9fdf5",
+        "stored_path": "C:\\Coding Projects\\Kiah\\Saberis2Jobber\\src\\processed_exports\\296a4b59-9f07-4d7a-9590-d580860e32a6.json",
+        "ingested_at": "2025-07-14T21:41:00.720516",
         "export_date": "2025.07.14",
         "customer_name": "",
         "username": "KiahHochstetler",
@@ -44,21 +11,10 @@
         "sent_to_jobber": false
     },
     {
-        "saberis_id": "57f3b5bf-68a8-4c36-b30d-01e91b9ba8a3",
-        "original_filename": "a897f522-3fa4-4fb5-9063-b042f7ebdb63",
-        "stored_path": "C:\\Coding Projects\\Kiah\\Saberis2Jobber\\src\\processed_exports\\57f3b5bf-68a8-4c36-b30d-01e91b9ba8a3.json",
-        "ingested_at": "2025-07-14T20:16:18.381265",
-        "export_date": "2025.07.14",
-        "customer_name": "",
-        "username": "KiahHochstetler",
-        "shipping_address": "",
-        "sent_to_jobber": false
-    },
-    {
-        "saberis_id": "4f9e6336-a639-49a2-bcfc-b83506eab88f",
-        "original_filename": "ec8013dd-123b-460e-8f71-c77fa9a89013",
-        "stored_path": "C:\\Coding Projects\\Kiah\\Saberis2Jobber\\src\\processed_exports\\4f9e6336-a639-49a2-bcfc-b83506eab88f.json",
-        "ingested_at": "2025-07-14T20:16:19.682938",
+        "saberis_id": "b05bc077-8b9b-435d-b807-d54a2763ef25",
+        "original_filename": "b713b5d9-44e8-4a00-b234-07a565cab8fc",
+        "stored_path": "C:\\Coding Projects\\Kiah\\Saberis2Jobber\\src\\processed_exports\\b05bc077-8b9b-435d-b807-d54a2763ef25.json",
+        "ingested_at": "2025-07-14T21:24:34.262777",
         "export_date": "2025.07.14",
         "customer_name": "",
         "username": "KiahHochstetler",
