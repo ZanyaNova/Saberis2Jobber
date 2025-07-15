@@ -2,13 +2,14 @@ import os
 import json
 from flask import Flask, request, redirect, url_for, render_template, jsonify, Response
 from .gsheet.catalog_manager import catalog_manager
+from dataclasses import asdict
 from .saberis_ingestion import ingest_saberis_exports, SaberisExportRecord
 
 # Auth and Config
 from .jobber_auth_flow import get_authorization_url, exchange_code_for_token, get_valid_access_token, verify_state_parameter
 from .jobber_client_module import JobberClient, QuoteNodeGQL, QuoteLineEditItemGQL, QuoteEditLineItemInputGQL
 from .jobber_models import get_line_items_from_export, SaberisOrder
-from typing import Dict, Any, TypedDict, List, Union, Tuple
+from typing import Dict, Any, TypedDict, List, Union, Tuple, cast
 
 # Flask App Initialization
 app = Flask(__name__)
@@ -229,49 +230,74 @@ def send_to_jobber():
         final_messages.append(add_message)
         return jsonify({"message": " ".join(filter(None, final_messages))})
 
-@app.route('/api/catalog-markup/<string:catalog_id>', methods=['GET'])
-def get_catalog_markup(catalog_id: str) -> Union[Response, Tuple[Response, int]]:
+@app.route('/api/catalog-item/<string:catalog_id>', methods=['GET'])
+def get_catalog_item(catalog_id: str) -> Union[Response, Tuple[Response, int]]:
     """
-    API endpoint to get the markup for a specific catalog.
+    API endpoint to get all data for a specific catalog item.
     """
     try:
-        markup = catalog_manager.get_markup(catalog_id)
-        return jsonify({"catalog_id": catalog_id, "markup": markup})
-    except Exception as e:
-        print(f"ERROR: Could not fetch markup for {catalog_id}: {e}")
-        # This now correctly matches the return type hint
-        return jsonify({"catalog_id": catalog_id, "markup": 0.035}), 500
+        item = catalog_manager.get_catalog_item(catalog_id)
+        if item:
+            # asdict converts the CatalogItem object to a dictionary
+            return jsonify(asdict(item))
+        else:
+            # If not found, return a 404
+            return jsonify({"error": "Item not found", "catalog_id": catalog_id}), 404
 
-@app.route('/api/catalog-markups', methods=['POST'])
-def save_catalog_markups() -> Union[Response, Tuple[Response, int]]:
+    except Exception as e:
+        print(f"ERROR: Could not fetch item for {catalog_id}: {e}")
+        return jsonify({"error": "An internal error occurred"}), 500
+
+@app.route('/api/catalog-items', methods=['POST'])
+def save_catalog_items() -> Union[Response, Tuple[Response, int]]:
     """
-    API endpoint to save markup values for multiple catalogs.
-    Expects a JSON payload like: {"CATALOG_A": 0.05, "CATALOG_B": 0.10}
+    API endpoint to save pricing factors for multiple catalog items.
+    Returns the updated state of the successfully saved items.
     """
     data: Any = request.get_json()
     
     if not isinstance(data, dict):
         return jsonify({"error": "Invalid payload format. Expected a JSON object."}), 400
 
-    # After the check above, the linter knows 'data' is a dictionary.
-    # We can now safely iterate over its items.
-    typed_data: Dict[str, Any] = data #type:ignore
+    # This is the key: We cast 'data' to its specific, expected structure.
+    # This tells the linter that keys are strings and values are dictionaries
+    # containing strings and numbers.
+    typed_data = cast(Dict[str, Dict[str, Union[int, float]]], data)
+
     errors: Dict[str, str] = {}
-    
-    for catalog_id, markup in typed_data.items():
+    saved_items: List[Dict[str, Any]] = []
+
+    # The linter now knows the types of 'catalog_id' and 'values' here.
+    for catalog_id, values in typed_data.items():
         try:
-            markup_value = float(markup) # The 'markup' variable is now known.
-            if not catalog_manager.set_markup(catalog_id, markup_value):
-                 errors[catalog_id] = "Failed to save in Google Sheet."
-        except (ValueError, TypeError):
-            errors[catalog_id] = f"Invalid markup value: {markup}"
+            # We still need runtime checks because cast does nothing at runtime.
+            multiplier = float(values['multiplier'])
+            margin = float(values['margin'])
+            
+            success = catalog_manager.set_pricing_factors(catalog_id, multiplier, margin)
+
+            if success:
+                updated_item = catalog_manager.get_catalog_item(catalog_id)
+                saved_items.append(asdict(updated_item))
+            else:
+                errors[catalog_id] = "Failed to save in Google Sheet."
+
+        except (KeyError, TypeError, ValueError):
+            # A combined block to catch malformed 'values' objects or non-numeric data.
+            errors[catalog_id] = f"Invalid data format or value for item: {values}"
         except Exception as e:
             errors[catalog_id] = str(e)
 
     if errors:
-        return jsonify({"error": "Failed to save some markups", "details": errors}), 500
+        return jsonify({
+            "error": "Failed to save some items", 
+            "details": errors
+        }), 500
 
-    return jsonify({"message": "Markups saved successfully."})
+    return jsonify({
+        "message": "Items saved successfully.",
+        "saved_items": saved_items
+    })
 
 @app.route('/')
 def home():

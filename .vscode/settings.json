@@ -1,5 +1,29 @@
 {
     "cSpell.words": [
         "saberis"
-    ]
+    ],
+    //Font
+	"editor.letterSpacing": 1.04,
+	"editor.lineHeight": 1.6,
+	"editor.fontFamily": "Segoe UI",
+	"editor.fontWeight": "120",
+	"editor.renderLineHighlight": "none",
+	"editor.fontSize": 18,
+	"editor.tokenColorCustomizations": {
+        "textMateRules": [
+            {
+                "scope": [
+                    "meta.paragraph.markdown"
+                ],
+                "settings": {
+                    "foreground": "#ebe7e0"
+                }
+            }
+        ]
+	},
+    "workbench.colorCustomizations": {
+		"editorLineNumber.foreground": "#2d2d33",
+		"editorLineNumber.activeForeground": "#404047",
+        "panel.background": "#21222c",
+	},
 }

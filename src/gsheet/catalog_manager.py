@@ -1,31 +1,45 @@
+# catalog_manager.py (with dataclass)
+
 import time
-from typing import Dict, List, Final, Tuple, cast
+from typing import Dict, List, Final, cast
+from dataclasses import dataclass
 
 from gspread import Worksheet, exceptions
 
 # Assume this is your single, consolidated sheet
 from .gsheet_config import GSHEET_CATALOG_DATA
 
+# --- Data Structure ---
+@dataclass
+class CatalogItem:
+    """A structured representation of a row in our catalog sheet."""
+    catalog_id: str
+    brand: str
+    multiplier: float
+    margin: float
+
 # --- Constants ---
-DEFAULT_MARKUP: Final[float] = 0.035
+DEFAULT_MULTIPLIER: Final[float] = 0.3
+DEFAULT_MARGIN: Final[float] = 0.6
+
+# Column positions in the Google Sheet (1-based index)
 CATALOG_COL: Final[int] = 1
 BRAND_COL: Final[int] = 2
-MARKUP_COL: Final[int] = 3
+MULTIPLIER_COL: Final[int] = 3
+MARGIN_COL: Final[int] = 4
 
 # --- The All-in-One Manager ---
 
 class CatalogManager:
     """
     Manages product data from a single Google Sheet.
-    The sheet is expected to have: Catalog (col 1), Brand (col 2), Markup (col 3).
-    All lookups are keyed by the catalog ID.
+    Lookups are keyed by catalog ID and return a structured CatalogItem.
     """
 
     def __init__(self, worksheet: Worksheet, max_age_seconds: int = 90):
         self.worksheet: Worksheet = worksheet
         self._max_age_seconds: int = max_age_seconds
-        # The cache stores a tuple: (brand, markup)
-        self._cache: Dict[str, Tuple[str, float]] = {}
+        self._cache: Dict[str, CatalogItem] = {}
         self.last_updated: float = 0.0
         self._refresh()
 
@@ -37,36 +51,39 @@ class CatalogManager:
         """Fetches all data from the sheet and rebuilds the cache."""
         print("⏳ Refreshing catalog cache...")
         all_rows = cast(List[List[str]], self.worksheet.get_all_values())
-        # Skip header row
         data_rows = all_rows[1:] if all_rows else []
 
-        cache: Dict[str, Tuple[str, float]] = {}
+        cache: Dict[str, CatalogItem] = {}
         for row in data_rows:
-            # Skip rows without a catalog ID
             if not row or not row[CATALOG_COL - 1]:
                 continue
             
-            catalog_id = row[CATALOG_COL - 1]
+            catalog_id = row[CATALOG_COL - 1].strip()
             
-            # 1. Determine the brand: Use brand column, or fall back to catalog ID
             brand = catalog_id
             if len(row) >= BRAND_COL and row[BRAND_COL - 1]:
-                brand = row[BRAND_COL - 1]
+                brand = row[BRAND_COL - 1].strip()
 
-            # 2. Determine the markup: Use markup column, or fall back to default
-            markup = DEFAULT_MARKUP
-            if len(row) >= MARKUP_COL:
+            multiplier = DEFAULT_MULTIPLIER
+            if len(row) >= MULTIPLIER_COL:
                 try:
-                    markup_val = float(row[MARKUP_COL - 1])
-                    # Only accept valid, positive markups
-                    if markup_val > 0:
-                        markup = markup_val
+                    multiplier = float(row[MULTIPLIER_COL - 1])
                 except (ValueError, TypeError):
-                    # Value was not a valid number, so we use the default
+                    pass 
+
+            margin = DEFAULT_MARGIN
+            if len(row) >= MARGIN_COL:
+                try:
+                    margin = float(row[MARGIN_COL - 1])
+                except (ValueError, TypeError):
                     pass
             
-            cache[catalog_id] = (brand, markup)
-            print(catalog_id + " | " + brand + " = " + str(markup))
+            cache[catalog_id] = CatalogItem(
+                catalog_id=catalog_id, # Add the ID to the object itself
+                brand=brand, 
+                multiplier=multiplier, 
+                margin=margin
+            )
         
         self._cache = cache
         self.last_updated = time.time()
@@ -78,48 +95,53 @@ class CatalogManager:
             self._refresh()
 
     def get_brand(self, catalog_id: str) -> str:
-        """Gets the brand for a catalog ID. Returns the catalog ID if no brand is set."""
-        self._ensure_fresh()
-        # The brand is the first item in the cached tuple.
-        # If catalog_id is not in cache, default tuple's 1st item is catalog_id.
-        return self._cache.get(catalog_id, (catalog_id, 0.0))[0]
+        """Gets the brand for a catalog ID."""
+        return self.get_catalog_item(catalog_id).brand
+    
+    # In CatalogManager class
 
-    def get_markup(self, catalog_id: str) -> float:
-        """Gets the markup for a catalog ID. Returns the default markup if not set."""
+    def get_catalog_item(self, catalog_id: str) -> CatalogItem:
+        """
+        Gets the entire CatalogItem object for a given ID.
+        If not found, returns a default item with the requested catalog_id.
+        """
         self._ensure_fresh()
-        # The markup is the second item.
-        # If catalog_id not in cache, default tuple's 2nd item is DEFAULT_MARKUP.
-        print("===Markup=== " + str(self._cache.get(catalog_id, ( "", DEFAULT_MARKUP)))[1])
-        return self._cache.get(catalog_id, ( "", DEFAULT_MARKUP))[1]
+        item = self._cache.get(catalog_id)
+        
+        if item:
+            return item
+        else:
+            print(f"No entry in cache for catalog_id: {catalog_id}, returning a default item.")
+            # Construct a default using the requested ID and default values
+            return CatalogItem(
+                catalog_id=catalog_id,
+                brand="Undefined", # A more generic default brand
+                multiplier=DEFAULT_MULTIPLIER,
+                margin=DEFAULT_MARGIN
+            )
 
-    def set_markup(self, catalog_id: str, markup: float) -> bool:
+    def set_pricing_factors(self, catalog_id: str, multiplier: float, margin: float) -> bool:
         """
-        Sets the markup for a catalog ID.
-        Updates the row if the catalog ID exists, otherwise creates a new row.
+        Sets the pricing factors for a catalog ID. Updates or creates a row.
         """
-        print(f"Attempting to set markup for '{catalog_id}' to {markup}...")
+        print(f"Attempting to set pricing for '{catalog_id}' to (Multiplier: {multiplier}, Margin: {margin})...")
         try:
-            # This is a write operation, so we accept one API call to find the cell.
             cell = self.worksheet.find(catalog_id, in_column=CATALOG_COL) #type:ignore
 
             if cell:
-                # Catalog exists, update the markup in that row
-                self.worksheet.update_cell(cell.row, MARKUP_COL, markup)
+                range_to_update = f'C{cell.row}:D{cell.row}'
+                self.worksheet.update(range_name=range_to_update, values=[[multiplier, margin]])
                 print(f"Updated existing entry for '{catalog_id}'.")
             else:
-                # Catalog is new, create a new row for it
-                # We leave the brand column empty; it will default to the catalog ID on read.
-                self.worksheet.append_row([catalog_id, "", markup])
+                self.worksheet.append_row([catalog_id, "", multiplier, margin])
                 print(f"Created new entry for '{catalog_id}'.")
 
-            # Force a refresh on the next read to ensure the cache is in sync.
             self.last_updated = 0.0
             return True
 
         except exceptions.GSpreadException as e:
-            print(f"🚨 Failed to set markup for '{catalog_id}'. Error: {e}")
+            print(f"🚨 Failed to set pricing for '{catalog_id}'. Error: {e}")
             return False
 
 # --- Global Instance ---
-# You'll import and use this single manager across your application.
 catalog_manager = CatalogManager(GSHEET_CATALOG_DATA)
