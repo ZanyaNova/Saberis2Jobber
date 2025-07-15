@@ -179,7 +179,6 @@
                                 <p class="currency-line">Total Markup: <strong x-text="formatCurrency(totalMarkup)"></strong></p>
                                 <footer>
                                     <p class="currency-line grand-total">Customer Total: <strong x-text="formatCurrency(grandTotal)"></strong></p>
-                                    <hr>
                                     <small class="currency-line subtle-line" >Customer Discount: <strong x-text="formatCurrency(customerDiscount)" :class="{ 'positive-discount': customerDiscount > 0 }"></strong></small>
                                     <small class="currency-line subtle-line">Discount %: <strong x-text="`${customerDiscountPercent}%`" :class="{ 'positive-discount': customerDiscount > 0 }"></strong></small>
                                 </footer>
