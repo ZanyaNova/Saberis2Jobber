@@ -177,11 +177,11 @@
                                 <p class="currency-line">Total MSRP: <strong x-text="formatCurrency(totalMSRP)"></strong></p>
                                 <p class="currency-line">Total COGS: <strong x-text="formatCurrency(totalCOGS)"></strong></p>
                                 <p class="currency-line">Total Markup: <strong x-text="formatCurrency(totalMarkup)"></strong></p>
-                                <hr>
                                 <footer>
-                                    <p class="currency-line">Customer Total: <strong x-text="formatCurrency(grandTotal)"></strong></p>
-                                    <p class="currency-line">Customer Discount: <strong x-text="formatCurrency(customerDiscount)" :class="{ 'positive-discount': customerDiscount > 0 }"></strong></p>
-                                    <p class="currency-line">Discount %: <strong x-text="`${customerDiscountPercent}%`" :class="{ 'positive-discount': customerDiscount > 0 }"></strong></p>
+                                    <p class="currency-line grand-total">Customer Total: <strong x-text="formatCurrency(grandTotal)"></strong></p>
+                                    <hr>
+                                    <small class="currency-line subtle-line" >Customer Discount: <strong x-text="formatCurrency(customerDiscount)" :class="{ 'positive-discount': customerDiscount > 0 }"></strong></small>
+                                    <small class="currency-line subtle-line">Discount %: <strong x-text="`${customerDiscountPercent}%`" :class="{ 'positive-discount': customerDiscount > 0 }"></strong></small>
                                 </footer>
                             </article>
                         </aside>
@@ -233,12 +233,19 @@
 
     .currency-line {
         margin: 0;
-        font-size: 0.9em;
+        font-size: .9em;
         display: flex;
         justify-content: space-between;
     }
+
+    .grand-total {
+        font-size: 1.1em;
+    }
     .positive-discount {
         color: var(--pico-color-green-500);
+    }
+    .subtle-line {
+        opacity: .5;
     }
 
     /* Ignored data styles*/
@@ -280,6 +287,7 @@
         pointer-events: none;
         background-color: var(--pico-muted-background-color);
     }
+
 </style>
 
 <script>

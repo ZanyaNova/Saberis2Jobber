@@ -6,13 +6,9 @@ FINISH IMPLEMENTING QUOTES TASK
 - Add search field
 - Remove instances "Pricelevel: PRICE" 
 - Flip "Species / Finish:" to have Finish first
-- Split markup into "multiplier" and "margin".
-  - Get COGS (MSRP*Multiplier). 
-  - Quote uses (COGS/ (1-margin)) to get get cost to customer  
-  - For Jobber pass in COGS as cost, and 0 as price.
+- For "SendToJobber", pass in COGS as cost, and 0 as price.
 - Investigate products and services not adding
 - Get modified cabinet test file
-- Think about ways to make modified cabinet clear (IF ITS NOT CLEAR FROM TESTSING)
 - Break mod codes up into mod N. Keep code in jobber name, and then put the "Mod N: #####" into the description itself.
 
 VOLUME
