@@ -375,8 +375,62 @@ class JobberClient:
             error_type_name = type(e).__name__
             print(f"ERROR: A network request to Jobber API failed for {log_query_identifier} ({error_type_name}): {e}")
             raise
+    def get_all_products_and_services(self) -> List[Dict[str, str]]:
+        """
+        Fetches all products and services from Jobber, handling pagination.
+        Returns a list of dictionaries, each with 'id' and 'name'.
+        """
+        print("INFO: Fetching all products and services from Jobber...")
+        all_products: List[Dict[str, str]] = []
+        cursor: Optional[str] = None
+        
+        query = """
+        query GetAllProducts($cursor: String) {
+          productsAndServices(first: 250, after: $cursor) {
+            edges {
+              cursor
+              node {
+                id
+                name
+              }
+            }
+            pageInfo {
+              hasNextPage
+            }
+          }
+        }
+        """
 
-    # --- NEW METHOD ---
+        while True:
+            try:
+                variables = {"cursor": cursor} if cursor else {}
+                raw_data = self._post(query, variables)
+                
+                connection = raw_data.get("productsAndServices", {})
+                edges = connection.get("edges", [])
+                
+                for edge in edges:
+                    node = edge.get("node")
+                    if node and node.get("id") and node.get("name"):
+                        all_products.append({
+                            "id": node["id"],
+                            "name": node["name"]
+                        })
+
+                page_info = connection.get("pageInfo", {})
+                if page_info.get("hasNextPage") and edges:
+                    cursor = edges[-1].get("cursor")
+                else:
+                    break # Exit the loop if there are no more pages
+
+            except (ConnectionRefusedError, requests.exceptions.RequestException, RuntimeError) as e:
+                print(f"ERROR: Failed to fetch products and services from Jobber: {e}")
+                # Return what we have so far, or an empty list if it fails on the first go.
+                break 
+        
+        print(f"SUCCESS: Retrieved {len(all_products)} products and services.")
+        return all_products
+
     def get_quote_with_line_items(self, quote_id: str) -> Optional[FullQuoteNodeGQL]:
         """Fetches a single quote and its line items by ID."""
         print(f"INFO: Fetching full details for Jobber Quote ID: {quote_id}")
@@ -730,8 +784,9 @@ class JobberClient:
                 "unitPrice": li_model.unit_price,
                 "taxable": li_model.taxable,
                 "saveToProductsAndServices": True,
+                "productOrServiceId": None,
                 "description": li_model.description,
-                "unitCost": -1
+                "unitCost": -1,
             }
             if li_model.unit_cost is not None:
                 item_gql["unitCost"] = li_model.unit_cost

@@ -90,11 +90,13 @@ class QuoteLineEditItemGQL(TypedDict):
     unitCost: Optional[float]
     taxable: bool
     saveToProductsAndServices: bool
+    productOrServiceId: Optional[str]
 
 class QuoteLineItemGQL(TypedDict, total=True):
     id: str
     name: str  # Required
     saveToProductsAndServices: bool # Required
+    productOrServiceId: Optional[str]
     description: Optional[str] # Optional in API, can map from QuoteLineInput.name or leave out
     quantity: Optional[float]
     unitPrice: Optional[float]
@@ -369,6 +371,12 @@ def get_line_items_from_export(stored_path: str, ui_quantity: int) -> List[Quote
         ]
         description_parts: list[str] = []
         for key, value in li.attributes.items():
+            if key.strip().lower() == "pricelevel":
+                continue
+
+            if key == "Species / Finish":
+                description_parts.append(f"Finish / Species: {value}")
+
             description_parts.append(f"{key}: {value}")
             if key in FIELDs_TO_PUT_IN_TITLE:
                 base_name_parts.append(value)
@@ -393,7 +401,8 @@ def get_line_items_from_export(stored_path: str, ui_quantity: int) -> List[Quote
             "description": jobber_description,
             "unitCost": li.cost if li.cost > 0 else None,
             "taxable": False,
-            "saveToProductsAndServices": True
+            "saveToProductsAndServices": True,
+            "productOrServiceId": None,
         }
         jobber_lines.append(line_item)
     return jobber_lines

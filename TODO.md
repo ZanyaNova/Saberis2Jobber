@@ -4,8 +4,6 @@ FINISH IMPLEMENTING QUOTES TASK
 - Add overflow management to catalog column
 - Make it jobs only (rather than for approved quotes) IF JOBS LET YOU PAST IT COST AND PRICE 
 - Add search field
-- Remove instances "Pricelevel: PRICE" 
-- Flip "Species / Finish:" to have Finish first
 - For "SendToJobber", pass in COGS as cost, and 0 as price.
 - Investigate products and services not adding
 - Get modified cabinet test file
