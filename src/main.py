@@ -171,7 +171,6 @@ def send_to_jobber():
     saberis_export_records = ingest_saberis_exports()
     manifest = {item['saberis_id']: item for item in saberis_export_records}
 
-    # ---  Generate all desired line items ---
     all_desired_line_items: List[QuoteLineEditItemGQL] = []
     for export_data in exports_payload:
         saberis_id = export_data.get('saberis_id')
@@ -185,7 +184,7 @@ def send_to_jobber():
     if not all_desired_line_items:
         return jsonify({"error": "No valid line items could be generated"}), 400
 
-    # --- New Logic: Step 2 - Fetch existing line items from the quote ---
+    # --- Step 2 - Fetch existing line items from the quote ---
     quote_details = jobber_client.get_quote_with_line_items(quote_id)
     if not quote_details:
         return jsonify({"error": "Could not fetch existing quote details from Jobber."}), 500
@@ -193,7 +192,7 @@ def send_to_jobber():
     existing_line_items_nodes = quote_details.get("lineItems", {}).get("nodes", [])
     existing_items_map = {item['name']: item for item in existing_line_items_nodes}
 
-    # --- New Logic: Step 3 - Compare and categorize ---
+    # --- Step 3 - Compare and categorize ---
     items_to_add: List[QuoteLineEditItemGQL] = []
     items_to_update: List[QuoteEditLineItemInputGQL] = []
 
@@ -211,11 +210,39 @@ def send_to_jobber():
             # Item is new
             items_to_add.append(desired_item)
 
-    # --- New Logic: Step 4 - Execute API Calls ---
+    # --- Execute API Calls ---
+    # DEBUGGING PAYLOAD
+    print("\n--- [INSPECTING PAYLOAD] ---")
+    print(f"Quote ID: {quote_id}")
+    print(f"Found {len(items_to_add)} new item(s) to add.")
+
+    for i, item_payload in enumerate(items_to_add):
+        # Use .get() to avoid errors if a key is missing from the payload dict
+        name = item_payload.get('name')
+        prod_id = item_payload.get('productOrServiceId', 'Not Present')
+        save_flag = item_payload.get('saveToProductsAndServices', 'Not Present')
+
+        print(f"\n[Item {i+1} to ADD]")
+        print(f"  - Name: {name}")
+        print(f"  - productOrServiceId: {prod_id}")
+        print(f"  - saveToProductsAndServices: {save_flag}")
+
+        # This explicitly checks for the conflict we discussed.
+        if prod_id != 'Not Present' and save_flag is True:
+            print("  🚨 CONFLICT DETECTED: Item has both a `productOrServiceId` and `saveToProductsAndServices` is True.")
+
+    print("--- [END INSPECTION] ---\n")
+    # For a more raw, detailed view of the entire payload, you can uncomment these lines:
+    # import json
+    # print("Raw items_to_add payload:")
+    # print(json.dumps(items_to_add, indent=2))
+    #endregion
+
+
     update_success, update_message = jobber_client.update_line_items_on_quote(quote_id, items_to_update)
     add_success, add_message = jobber_client.add_line_items_to_quote(quote_id, items_to_add)
 
-    # --- New Logic: Step 5 - Report Results ---
+    # --- Report Results ---
     final_messages: list[str] = []
     if not update_success:
         final_messages.append(f"Update failed: {update_message}")
@@ -225,9 +252,8 @@ def send_to_jobber():
     if final_messages:
         return jsonify({"error": " | ".join(final_messages)}), 500
     else:
-        # Combine success messages for a comprehensive status
-        final_messages.append(update_message)
         final_messages.append(add_message)
+        final_messages.append(update_message)
         return jsonify({"message": " ".join(filter(None, final_messages))})
 
 @app.route('/api/catalog-item/<string:catalog_id>', methods=['GET'])

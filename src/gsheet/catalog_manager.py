@@ -97,8 +97,6 @@ class CatalogManager:
     def get_brand(self, catalog_id: str) -> str:
         """Gets the brand for a catalog ID."""
         return self.get_catalog_item(catalog_id).brand
-    
-    # In CatalogManager class
 
     def get_catalog_item(self, catalog_id: str) -> CatalogItem:
         """

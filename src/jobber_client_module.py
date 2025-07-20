@@ -441,7 +441,6 @@ class JobberClient:
         """
         if not line_items:
             return True, "No new line items to add."
-        # ... (mutation definition is the same) ...
         mutation = """
         mutation QuoteCreateLineItems($quoteId: EncodedId!, $lineItems: [QuoteCreateLineItemAttributes!]!) {
           quoteCreateLineItems(quoteId: $quoteId, lineItems: $lineItems) {
@@ -470,7 +469,7 @@ class JobberClient:
                 error_messages = [f"Path: {e.get('path', 'N/A')}, Message: {e.get('message', 'Unknown error')}" for e in user_errors]
                 return False, f"Failed to add line items due to user errors: {'; '.join(error_messages)}"
 
-            # MODIFIED: Check the 'createdLineItems' field as per new documentation.
+            # Check the 'createdLineItems' field as per new documentation.
             created_items = result.get("createdLineItems")
             if created_items is None: # It can be an empty list, but not None if the call was successful
                 return False, "Failed to add line items: API response did not include the 'createdLineItems' field."

@@ -393,7 +393,7 @@ def get_line_items_from_export(stored_path: str, ui_quantity: int) -> List[Quote
             "description": jobber_description,
             "unitCost": li.cost if li.cost > 0 else None,
             "taxable": False,
-            "saveToProductsAndServices": False
+            "saveToProductsAndServices": True
         }
         jobber_lines.append(line_item)
     return jobber_lines
