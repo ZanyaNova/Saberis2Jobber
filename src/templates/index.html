@@ -31,6 +31,11 @@
                     <div class="grid">
                         <section>
                             <h3>1. Select Jobber Quote</h3>
+                            <input 
+                                type="search" 
+                                placeholder="Search quotes by name, address..." 
+                                x-model.debounce.150ms="jobberSearchQuery"
+                                aria-label="Search Jobber Quotes">
                             <div class="scrollable-list">
                                 <template x-for="quote in paginatedJobberQuotes" :key="quote.id">
                                     <article @click="selectedQuoteId = quote.id" :class="{ 'selected-card': selectedQuoteId === quote.id }" style="cursor: pointer;">
@@ -40,6 +45,9 @@
                                             <small x-text="`Approved on: ${quote.approved_date}`" class="exported-by-label"></small>
                                         </footer>
                                     </article>
+                                </template>
+                                <template x-if="filteredJobberQuotes.length === 0">
+                                    <p>No quotes match your search.</p>
                                 </template>
                             </div>
                             <div x-show="totalJobberPages > 1" class="pagination-controls">
@@ -361,6 +369,7 @@
             // Jobber
             jobberAuthStatus: 'checking',
             jobberQuotes: [],
+            jobberSearchQuery: '',
             nextCursor: null,
             hasNextPage: false,
             jobberCurrentPage: 1,
@@ -385,14 +394,28 @@
             itemsPerPage: 5,
             itemsPerCatalogPage: 3, 
 
-            // --- PAGINATION ---
+            // --- COMPUTED & GETTERS ---
+            get filteredJobberQuotes() {
+                if (!this.jobberSearchQuery.trim()) {
+                    return this.jobberQuotes;
+                }
+                const query = this.jobberSearchQuery.toLowerCase().trim();
+                return this.jobberQuotes.filter(quote => {
+                    const name = quote.client_name || '';
+                    const address = quote.shipping_address || '';
+                    const date = quote.approved_date || '';
+                    return name.toLowerCase().includes(query) ||
+                           address.toLowerCase().includes(query) ||
+                           date.toLowerCase().includes(query);
+                });
+            },
             get paginatedJobberQuotes() {
                 const start = (this.jobberCurrentPage - 1) * this.itemsPerPage;
                 const end = start + this.itemsPerPage;
-                return this.jobberQuotes.slice(start, end);
+                return this.filteredJobberQuotes.slice(start, end);
             },
             get totalJobberPages() {
-                return Math.ceil(this.jobberQuotes.length / this.itemsPerPage);
+                return Math.ceil(this.filteredJobberQuotes.length / this.itemsPerPage);
             },
             get paginatedSaberisExports() {
                 const start = (this.saberisCurrentPage - 1) * this.itemsPerPage;
@@ -479,6 +502,11 @@
             init() {
                 this.fetchJobberQuotes();
                 this.refreshExports();
+                
+                // When the user searches, reset the page to 1
+                this.$watch('jobberSearchQuery', () => {
+                    this.jobberCurrentPage = 1;
+                });
             },
             
             async fetchJobberQuotes() {
