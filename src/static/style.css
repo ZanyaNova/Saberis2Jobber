@@ -96,3 +96,10 @@ article.export-card {
 .catalog-card .cost-details p {
     margin: 0;
 }
+
+.input-small {
+    font-size: 0.9em; /* Adjust font size as needed */
+    --pico-form-element-spacing-vertical: 0.25rem; /* Reduces top/bottom padding */
+    --pico-form-element-spacing-horizontal: 0.5rem; /* Reduces left/right padding */
+    height: auto; /* Ensures the height adjusts to the new padding */
+}
