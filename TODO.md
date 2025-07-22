@@ -1,4 +1,5 @@
-FINISH IMPLEMENTING QUOTES TASK
+- Complete pagination for backend and front end
+- Finish search
 - Add option to exclude catalog from sending to jobber
 - Check what fields need to be filled for name 
 - Add overflow management to catalog column

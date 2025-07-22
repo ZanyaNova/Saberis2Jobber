@@ -136,39 +136,46 @@
                                     <span x-show="saveState === 'saved'" style="color: green; font-size: smaller;">Saved!</span>
                                 </span>
                             </h3>
-                            <template x-for="catalog in uniqueCatalogs" :key="catalog">
-                                <article class="catalog-card" :class="{ 'is-ignored': ignoredCatalogs.includes(catalog) }">
-                                    <header>
-                                        <strong x-text="catalogPricingData[catalog] ? catalogPricingData[catalog].brand : catalog"></strong>
-                                        <div class="ignore-toggle">
-                                            <label>
-                                                <span class="ignore-label">ignore:</span>
-                                                <input type="checkbox" :value="catalog" x-model="ignoredCatalogs">
-                                            </label>
+                            <div class="scrollable-list" style="max-height: 65vh;">
+                                <template x-for="catalog in paginatedUniqueCatalogs" :key="catalog">
+                                    <article class="catalog-card" :class="{ 'is-ignored': ignoredCatalogs.includes(catalog) }">
+                                        <header>
+                                            <strong x-text="catalogPricingData[catalog] ? catalogPricingData[catalog].brand : catalog"></strong>
+                                            <div class="ignore-toggle">
+                                                <label>
+                                                    <span class="ignore-label">ignore:</span>
+                                                    <input type="checkbox" :value="catalog" x-model="ignoredCatalogs">
+                                                </label>
+                                            </div>
+                                        </header>
+                                        
+                                        <div class="pricing-inputs">
+                                            <div class="input-group">
+                                                <label :for="'multiplier-' + catalog">Multiplier</label>
+                                                <input :id="'multiplier-' + catalog" type="number" step="0.01" x-model.number="catalogPricingData[catalog].multiplier" @input="onPricingInputChange()">
+                                            </div>
+                                            <div class="input-group">
+                                                <label :for="'margin-' + catalog">Margin</label>
+                                                <input :id="'margin-' + catalog" type="number" step="0.01" x-model.number="catalogPricingData[catalog].margin" @input="onPricingInputChange()" placeholder="e.g. 0.25">
+                                            </div>
                                         </div>
-                                    </header>
-                                    
-                                    <div class="pricing-inputs">
-                                        <div class="input-group">
-                                            <label :for="'multiplier-' + catalog">Multiplier</label>
-                                            <input :id="'multiplier-' + catalog" type="number" step="0.01" x-model.number="catalogPricingData[catalog].multiplier" @input="onPricingInputChange()">
-                                        </div>
-                                        <div class="input-group">
-                                            <label :for="'margin-' + catalog">Margin</label>
-                                            <input :id="'margin-' + catalog" type="number" step="0.01" x-model.number="catalogPricingData[catalog].margin" @input="onPricingInputChange()" placeholder="e.g. 0.25">
-                                        </div>
-                                    </div>
 
-                                    <hr class="card-separator">
+                                        <hr class="card-separator">
 
-                                    <div class="cost-details">
-                                        <p>MSRP: <strong x-text="formatCurrency(catalogBaseCosts[catalog] || 0)"></strong></p>
-                                        <p>COGS: <strong x-text="formatCurrency(calculateCOGS(catalog))"></strong></p>
-                                        <p>Markup: <strong x-text="formatCurrency(calculateMarkup(catalog))"></strong></p>
-                                        <p>Customer Price: <strong x-text="formatCurrency(calculateCustomerPrice(catalog))"></strong></p>
-                                    </div>
-                                </article>
-                            </template>
+                                        <div class="cost-details">
+                                            <p>MSRP: <strong x-text="formatCurrency(catalogBaseCosts[catalog] || 0)"></strong></p>
+                                            <p>COGS: <strong x-text="formatCurrency(calculateCOGS(catalog))"></strong></p>
+                                            <p>Markup: <strong x-text="formatCurrency(calculateMarkup(catalog))"></strong></p>
+                                            <p>Customer Price: <strong x-text="formatCurrency(calculateCustomerPrice(catalog))"></strong></p>
+                                        </div>
+                                    </article>
+                                </template>
+                            </div>
+                             <div x-show="totalCatalogPages > 1" class="pagination-controls">
+                                <button @click="catalogCurrentPage--" :disabled="catalogCurrentPage === 1">&lt; Prev</button>
+                                <span x-text="`Page ${catalogCurrentPage} of ${totalCatalogPages}`"></span>
+                                <button @click="catalogCurrentPage++" :disabled="catalogCurrentPage === totalCatalogPages">Next &gt;</button>
+                            </div>
                         </section>
 
                         <aside>
@@ -319,9 +326,11 @@
             catalogBaseCosts: {}, // Stores summed MSRP for each catalog
             originalCatalogPricingData: {}, // "Pristine" copy of catalogPricingData for dirty checking
             saveState: 'clean', // States: 'clean', 'dirty', 'saving', 'saved'
+            catalogCurrentPage: 1,
             
             // Configuration
             itemsPerPage: 3,
+            itemsPerCatalogPage: 2, // Fewer items per page due to height
 
             // --- PAGINATION ---
             get paginatedJobberQuotes() {
@@ -339,6 +348,14 @@
             },
             get totalSaberisPages() {
                 return Math.ceil(this.saberisExports.length / this.itemsPerPage);
+            },
+            get paginatedUniqueCatalogs() {
+                const start = (this.catalogCurrentPage - 1) * this.itemsPerCatalogPage;
+                const end = start + this.itemsPerCatalogPage;
+                return this.uniqueCatalogs.slice(start, end);
+            },
+            get totalCatalogPages() {
+                return Math.ceil(this.uniqueCatalogs.length / this.itemsPerCatalogPage);
             },
 
             formatForDisplay(num, maxDecimals = 3) {
