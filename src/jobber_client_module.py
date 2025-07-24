@@ -8,7 +8,7 @@ import re
 from typing import Any, Optional, Tuple, List, TypedDict, Union, Dict, cast
 
 from .jobber_auth_flow import get_valid_access_token
-from .jobber_models import SaberisOrder, QuoteCreateInput, ShippingAddress, QuoteLineItemGQL, QuoteLineEditItemGQL
+from .jobber_models import SaberisOrder, QuoteCreateInput, ShippingAddress, QuoteLineItemGQL, QuoteLineEditItemGQL, PageInfoGQL, JobNodeGQL, JobPageGQL, GetJobsResponseGQL
 
 JOBBER_GRAPHQL_URL = "https://api.getjobber.com/api/graphql"
 
@@ -58,9 +58,6 @@ class QuoteNodeGQL(TypedDict):
 class QuoteEdgeGQL(TypedDict):
     cursor: str
     node: QuoteNodeGQL
-
-class PageInfoGQL(TypedDict):
-    hasNextPage: bool
 
 class QuotesConnectionGQL(TypedDict):
     edges: List[QuoteEdgeGQL]
@@ -431,6 +428,78 @@ class JobberClient:
         print(f"SUCCESS: Retrieved {len(all_products)} products and services.")
         return all_products
 
+    def get_jobs(self, cursor: Optional[str] = None) -> JobPageGQL:
+        """
+        Fetches a single page of active jobs from Jobber.
+
+        Args:
+            cursor: The cursor for the page to retrieve. If None, retrieves the first page.
+
+        Returns:
+            A JobPageGQL dictionary containing the list of jobs for the page
+            and pagination info (next_cursor, has_next_page).
+        
+        Raises:
+            RuntimeError: If the API call fails or returns an unexpected structure.
+        """
+        log_message = f"Fetching a page of active jobs starting from cursor: {cursor}" if cursor else "Fetching first page of active jobs."
+        print(f"INFO: {log_message}")
+
+        query = """
+        query GetActiveJobs($cursor: String) {
+          jobs(first: 50, after: $cursor, filter: { jobStatus: active }) {
+            edges {
+              cursor
+              node {
+                id
+                jobNumber
+                title
+                jobStatus
+                client { id name }
+                property { id address { street1 city province postalCode } }
+                total
+              }
+            }
+            pageInfo {
+              hasNextPage
+            }
+          }
+        }
+        """
+        variables = {"cursor": cursor} if cursor else {}
+
+        try:
+            raw_response: GraphQLData = self._post(query, variables)
+            gql_response = cast(GetJobsResponseGQL, {"data": raw_response})
+            
+            jobs_connection = gql_response.get("data", {}).get("jobs")
+            if not jobs_connection:
+                raise RuntimeError("API response missing 'jobs' connection.")
+
+            jobs_on_page: List[JobNodeGQL] = [
+                edge["node"] for edge in jobs_connection.get("edges", []) if edge and "node" in edge
+            ]
+
+            page_info = jobs_connection.get("pageInfo", {})
+            has_next_page = page_info.get("hasNextPage", False)
+            
+            next_cursor: Optional[str] = None
+            edges = jobs_connection.get("edges", [])
+            if has_next_page and edges:
+                next_cursor = edges[-1].get("cursor")
+
+            print(f"SUCCESS: Retrieved {len(jobs_on_page)} active jobs. has_next_page: {has_next_page}")
+
+            return {
+                "jobs": jobs_on_page,
+                "next_cursor": next_cursor,
+                "has_next_page": has_next_page,
+            }
+
+        except (ConnectionRefusedError, requests.exceptions.RequestException, RuntimeError) as e:
+            print(f"ERROR: Failed to fetch active jobs from Jobber: {e}")
+            raise
+        
     def get_quote_with_line_items(self, quote_id: str) -> Optional[FullQuoteNodeGQL]:
         """Fetches a single quote and its line items by ID."""
         print(f"INFO: Fetching full details for Jobber Quote ID: {quote_id}")

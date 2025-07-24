@@ -8,7 +8,7 @@ from .saberis_ingestion import ingest_saberis_exports, SaberisExportRecord
 
 # Auth and Config
 from .jobber_auth_flow import get_authorization_url, exchange_code_for_token, get_valid_access_token, verify_state_parameter
-from .jobber_client_module import JobberClient, QuoteNodeGQL, QuoteLineEditItemGQL, QuoteEditLineItemInputGQL
+from .jobber_client_module import JobberClient, QuoteNodeGQL, JobNodeGQL, QuoteLineEditItemGQL, QuoteEditLineItemInputGQL
 from .jobber_models import get_line_items_from_export, SaberisOrder
 from typing import Dict, Any, TypedDict, List, Union, Tuple, Optional, cast
 
@@ -32,14 +32,23 @@ class EnrichedSaberisExportRecord(SaberisExportRecord):
     catalogs: List[str]
     costs_by_catalog: Dict[str, float]
 
+class JobberItemForUI(TypedDict):
+    id: str
+    type: str
+    number: str
+    client_name: str
+    shipping_address: str
+    total: str
+    status: str
+
 # ---------------------------------------------------------------------------
 # Data Transformation
 # ---------------------------------------------------------------------------
 
-def _transform_quote_for_ui(quote_node: QuoteNodeGQL) -> Dict[str, Any]:
-    """Transforms a detailed QuoteNodeGQL object into a simple dict for the UI."""
+def _transform_items_for_ui(item: Union[QuoteNodeGQL, JobNodeGQL], item_type: str) -> JobberItemForUI:
+    """Transforms a Jobber Quote or Job into a simple dict for the UI."""
     shipping_address = "Address not available"
-    property_data = quote_node.get("property")
+    property_data = item.get("property")
     if property_data:
         address_data = property_data.get("address", {})
         parts = [
@@ -53,14 +62,23 @@ def _transform_quote_for_ui(quote_node: QuoteNodeGQL) -> Dict[str, Any]:
         if address_str:
             shipping_address = address_str
 
-    total = quote_node.get("amounts", {}).get("total", 0.0)
+    # Handle different total fields between quotes and jobs
+    if item_type == 'Quote':
+        total = item.get("amounts", {}).get("total", 0.0)
+    else: # It's a Job
+        total = item.get("total", 0.0)
+    
+    # Get the display number (quoteNumber or jobNumber)
+    number = item.get("quoteNumber") if item_type == 'Quote' else item.get("jobNumber")
 
     return {
-        "id": quote_node["id"],
-        "client_name": quote_node["client"]["name"],
+        "id": item["id"],
+        "type": item_type,
+        "number": f"#{number}",
+        "client_name": item["client"]["name"],
         "shipping_address": shipping_address,
         "total": f"${total:,.2f}",
-        "approved_date": quote_node["transitionedAt"].split('T')[0]
+        "status": item.get("jobStatus", "N/A") if item_type == 'Job' else item.get("transitionedAt", "").split('T')[0]
     }
 
 
@@ -69,43 +87,42 @@ def _transform_quote_for_ui(quote_node: QuoteNodeGQL) -> Dict[str, Any]:
 # Flask Web Routes
 # ---------------------------------------------------------------------------
 
-@app.route('/api/jobber-quotes')
-def get_jobber_quotes():
+@app.route('/api/jobber-items')
+def get_jobber_items():
     """
-    API endpoint to serve a list of approved Jobber quotes.
-    Supports pagination via a 'cursor' query parameter.
+    API endpoint to serve a list of Jobber jobs and, optionally, approved quotes.
     """
-    # Check for authorization first
     if get_valid_access_token() is None:
         return jsonify({"error": "Not authorized with Jobber"}), 401
 
     jobber_client = JobberClient()
-    cursor = request.args.get('cursor', None) # Get cursor from query params
+    include_quotes = request.args.get('include_quotes', 'false').lower() == 'true'
+    
+    all_items: List[JobberItemForUI] = []
 
     try:
-        # Fetch a page of quotes using our new method
-        quote_page = jobber_client.get_approved_quotes(cursor=cursor)
+        # Fetch active jobs
+        job_page = jobber_client.get_jobs()
+        transformed_jobs = [_transform_items_for_ui(job, 'Job') for job in job_page["jobs"]]
+        all_items.extend(transformed_jobs)
+
+        # Optionally fetch approved quotes
+        if include_quotes:
+            quote_page = jobber_client.get_approved_quotes()
+            transformed_quotes = [_transform_items_for_ui(quote, 'Quote') for quote in quote_page["quotes"]]
+            all_items.extend(transformed_quotes)
+
+        # Sort items (e.g., by client name, then by type)
+        all_items.sort(key=lambda x: (x['client_name'], x['type']))
         
-        # Transform each quote for the UI
-        transformed_quotes = [
-            _transform_quote_for_ui(quote) for quote in quote_page["quotes"]
-        ]
-        
-        # Return the transformed data along with pagination info
-        return jsonify({
-            "quotes": transformed_quotes,
-            "next_cursor": quote_page["next_cursor"],
-            "has_next_page": quote_page["has_next_page"]
-        })
+        return jsonify({"items": all_items})
+
     except ConnectionRefusedError as e:
         print(f"AUTH_ERROR in endpoint: {e}")
         return jsonify({"error": str(e)}), 401
-
     except Exception as e:
-        # If the client raises an error (e.g., connection issue, API error), return it
-        print(f"ERROR: Could not fetch Jobber quotes: {e}")
+        print(f"ERROR: Could not fetch Jobber items: {e}")
         return jsonify({"error": str(e)}), 500
-
 @app.route('/api/saberis-exports')
 def get_saberis_exports():
     """

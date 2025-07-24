@@ -74,6 +74,57 @@ def _create_empty_str_dict() -> Dict[str, str]:
     """Helper to provide a typed empty dictionary for the dataclass factory."""
     return {}
 
+# --- Structures for Job Query ---
+
+class JobAddressGQL(TypedDict, total=False):
+    street1: Optional[str]
+    city: Optional[str]
+    province: Optional[str]
+    postalCode: Optional[str]
+
+class JobPropertyGQL(TypedDict, total=False):
+    id: str
+    address: JobAddressGQL
+
+class JobClientGQL(TypedDict):
+    id: str
+    name: str
+
+class JobNodeGQL(TypedDict):
+    id: str
+    jobNumber: int
+    title: Optional[str]
+    jobStatus: str # Corresponds to JobStatusTypeEnum
+    client: JobClientGQL
+    property: Optional[JobPropertyGQL]
+    total: float
+
+class JobEdgeGQL(TypedDict):
+    cursor: str
+    node: JobNodeGQL
+
+class PageInfoGQL(TypedDict):
+    hasNextPage: bool
+
+class JobsConnectionGQL(TypedDict):
+    edges: List[JobEdgeGQL]
+    pageInfo: PageInfoGQL # Reusing PageInfoGQL from Quotes
+    totalCount: int
+
+class JobsDataGQL(TypedDict):
+    jobs: JobsConnectionGQL
+
+class GetJobsResponseGQL(TypedDict):
+    data: JobsDataGQL
+
+class JobPageGQL(TypedDict):
+    """
+    Represents a single 'page' of jobs returned from the API.
+    """
+    jobs: List[JobNodeGQL]
+    next_cursor: Optional[str]
+    has_next_page: bool
+
 # ---------------------------------------------------------------------------
 # Saberis Application Models
 # ---------------------------------------------------------------------------
