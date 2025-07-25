@@ -86,11 +86,13 @@ def _transform_items_for_ui(item: Union[QuoteNodeGQL, JobNodeGQL], item_type: st
 # ---------------------------------------------------------------------------
 # Flask Web Routes
 # ---------------------------------------------------------------------------
+# In main.py
 
 @app.route('/api/jobber-items')
 def get_jobber_items():
     """
-    API endpoint to serve a list of Jobber jobs and, optionally, approved quotes.
+    API endpoint to serve a COMPLETE list of Jobber jobs and, optionally, approved quotes.
+    This function now handles pagination from the Jobber API internally.
     """
     if get_valid_access_token() is None:
         return jsonify({"error": "Not authorized with Jobber"}), 401
@@ -101,20 +103,31 @@ def get_jobber_items():
     all_items: List[JobberItemForUI] = []
 
     try:
-        # Fetch active jobs
-        job_page = jobber_client.get_jobs()
-        transformed_jobs = [_transform_items_for_ui(job, 'Job') for job in job_page["jobs"]]
-        all_items.extend(transformed_jobs)
+        # --- Fetch all active jobs ---
+        job_cursor: Optional[str] = None
+        while True:
+            job_page = jobber_client.get_jobs(cursor=job_cursor)
+            transformed_jobs = [_transform_items_for_ui(job, 'Job') for job in job_page["jobs"]]
+            all_items.extend(transformed_jobs)
+            if not job_page.get("has_next_page"):
+                break
+            job_cursor = job_page.get("next_cursor")
 
-        # Optionally fetch approved quotes
+        # --- Optionally fetch all approved quotes ---
         if include_quotes:
-            quote_page = jobber_client.get_approved_quotes()
-            transformed_quotes = [_transform_items_for_ui(quote, 'Quote') for quote in quote_page["quotes"]]
-            all_items.extend(transformed_quotes)
+            quote_cursor: Optional[str] = None
+            while True:
+                quote_page = jobber_client.get_approved_quotes(cursor=quote_cursor)
+                transformed_quotes = [_transform_items_for_ui(quote, 'Quote') for quote in quote_page["quotes"]]
+                all_items.extend(transformed_quotes)
+                if not quote_page.get("has_next_page"):
+                    break
+                quote_cursor = quote_page.get("next_cursor")
 
-        # Sort items (e.g., by client name, then by type)
+        # Sort the final combined list
         all_items.sort(key=lambda x: (x['client_name'], x['type']))
         
+        # The response is now a single object with the complete list
         return jsonify({"items": all_items})
 
     except ConnectionRefusedError as e:
@@ -123,6 +136,7 @@ def get_jobber_items():
     except Exception as e:
         print(f"ERROR: Could not fetch Jobber items: {e}")
         return jsonify({"error": str(e)}), 500
+
 @app.route('/api/saberis-exports')
 def get_saberis_exports():
     """

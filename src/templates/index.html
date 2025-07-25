@@ -2,9 +2,9 @@
 
 {% block content %}
 <div x-data="saberisDashboard()" x-init="init()">
-    
+
     <div class="container">
-        
+
         <template x-if="jobberAuthStatus === 'checking'">
             <article aria-busy="true">Checking authorization, please wait...</article>
         </template>
@@ -30,34 +30,48 @@
                 <template x-if="currentTask === 'sendToJobber'">
                     <div class="grid">
                         <section>
-                            <h3>1. Select Jobber Quote</h3>
-                            <input 
-                                type="search" 
-                                placeholder="Search quotes by name, address..." 
+                            <div class="grid">
+                                <h3>1. Select Jobber Item</h3>
+                                <div style="text-align: right;">
+                                    <label for="include_quotes" style="display: inline-block; margin-bottom: 0;">
+                                        Include Approved Quotes:
+                                        <input type="checkbox" id="include_quotes" x-model="includeQuotes" @change="fetchJobberItems()">
+                                    </label>
+                                </div>
+                            </div>
+                            <input
+                                type="search"
+                                placeholder="Search by name, address, number..."
                                 x-model.debounce.150ms="jobberSearchQuery"
-                                aria-label="Search Jobber Quotes">
+                                aria-label="Search Jobber Items">
                             <div class="scrollable-list">
-                                <template x-for="quote in paginatedJobberQuotes" :key="quote.id">
-                                    <article @click="selectedQuoteId = quote.id" :class="{ 'selected-card': selectedQuoteId === quote.id }" style="cursor: pointer;">
-                                        <h4 x-text="quote.client_name"></h4>
-                                        <footer>
-                                            <small x-text="quote.shipping_address"></small><br>
-                                            <small x-text="`Approved on: ${quote.approved_date}`" class="exported-by-label"></small>
-                                        </footer>
-                                    </article>
+                                <template x-if="isLoadingItems">
+                                    <article aria-busy="true" x-text="includeQuotes ? 'Loading all jobs and quotes from Jobber...' : 'Loading all jobs from Jobber...'"></article>
                                 </template>
-                                <template x-if="filteredJobberQuotes.length === 0">
-                                    <p>No quotes match your search.</p>
+                                <template x-if="!isLoadingItems">
+                                    <template x-for="item in paginatedItems" :key="item.id">
+                                        <article @click="selectedItemId = item.id" :class="{ 'selected-card': selectedItemId === item.id }" style="cursor: pointer;">
+                                            <header>
+                                                <h4 x-text="item.client_name" style="margin-bottom: 0;"></h4>
+                                                <small x-text="`${item.type} ${item.number}`"></small>
+                                            </header>
+                                            <small x-text="item.shipping_address"></small><br>
+                                            <small class="exported-by-label" x-text="item.type === 'Job' ? `Status: ${item.status}` : `Approved: ${item.status}`"></small>
+                                        </article>
+                                    </template>
+                                </template>
+                                <template x-if="!isLoadingItems && filteredItems.length === 0">
+                                    <p>No items match your search.</p>
                                 </template>
                             </div>
-                            <div x-show="totalJobberPages > 1" class="pagination-controls">
+                             <div x-show="totalJobberPages > 1" class="pagination-controls">
                                 <button @click="jobberCurrentPage--" :disabled="jobberCurrentPage === 1">&lt; Prev</button>
                                 <span x-text="`Page ${jobberCurrentPage} of ${totalJobberPages}`"></span>
                                 <button @click="jobberCurrentPage++" :disabled="jobberCurrentPage === totalJobberPages">Next &gt;</button>
                             </div>
                         </section>
 
-                        <section :class="selectedQuoteId ? 'content-visible' : 'content-hidden'">
+                        <section :class="selectedItemId ? 'content-visible' : 'content-hidden'">
                             <h3>2. Select Design(s) & Qty</h3>
                             <template x-if="isLoading">
                                 <article aria-busy="true">Loading Saberis Exports...</article>
@@ -167,25 +181,25 @@
                                                 </label>
                                             </div>
                                         </header>
-                                        
+
                                         <div class="pricing-inputs">
                                             <label :for="'multiplier-' + catalog">Multiplier</label>
-                                            <input 
-                                                :id="'multiplier-' + catalog" 
-                                                type="number" 
-                                                step="0.01" 
+                                            <input
+                                                :id="'multiplier-' + catalog"
+                                                type="number"
+                                                step="0.01"
                                                 class="input-small"
-                                                x-model.number="catalogPricingData[catalog].multiplier" 
+                                                x-model.number="catalogPricingData[catalog].multiplier"
                                                 @input="onPricingInputChange()">
-                                            
+
                                             <label :for="'margin-' + catalog">Margin</label>
-                                            <input 
-                                                :id="'margin-' + catalog" 
-                                                type="number" 
-                                                step="0.01" 
+                                            <input
+                                                :id="'margin-' + catalog"
+                                                type="number"
+                                                step="0.01"
                                                 class="input-small"
-                                                x-model.number="catalogPricingData[catalog].margin" 
-                                                @input="onPricingInputChange()" 
+                                                x-model.number="catalogPricingData[catalog].margin"
+                                                @input="onPricingInputChange()"
                                                 placeholder="e.g. 0.25">
                                         </div>
 
@@ -361,27 +375,27 @@
     function saberisDashboard() {
         return {
             // State
-            currentTask: 'calculateQuote', 
+            currentTask: 'calculateQuote',
             isLoading: false,
-            isLoadingQuotes: false,
+            isLoadingItems: false,
             isSending: false,
-            
+
             // Jobber
             jobberAuthStatus: 'checking',
-            jobberQuotes: [],
+            jobberItems: [],
+            includeQuotes: false,
             jobberSearchQuery: '',
-            nextCursor: null,
-            hasNextPage: false,
+            selectedItemId: null,
             jobberCurrentPage: 1,
+
 
             // Saberis
             saberisExports: [],
-            selectedQuoteId: null,
             selectedExportIds: [],
             quantities: {},
             saberisCurrentPage: 1,
             ignoredCatalogs: [],
-            
+
             // Quote Calculation
             uniqueCatalogs: [],
             catalogPricingData: {}, // Will store full CatalogItem objects: { "CATALOG_A": { catalog_id, brand, multiplier, margin } }
@@ -389,33 +403,33 @@
             originalCatalogPricingData: {}, // "Pristine" copy of catalogPricingData for dirty checking
             saveState: 'clean', // States: 'clean', 'dirty', 'saving', 'saved'
             catalogCurrentPage: 1,
-            
+
             // Configuration
             itemsPerPage: 5,
-            itemsPerCatalogPage: 3, 
+            itemsPerCatalogPage: 3,
 
             // --- COMPUTED & GETTERS ---
-            get filteredJobberQuotes() {
+            get filteredItems() {
                 if (!this.jobberSearchQuery.trim()) {
-                    return this.jobberQuotes;
+                    return this.jobberItems;
                 }
                 const query = this.jobberSearchQuery.toLowerCase().trim();
-                return this.jobberQuotes.filter(quote => {
-                    const name = quote.client_name || '';
-                    const address = quote.shipping_address || '';
-                    const date = quote.approved_date || '';
+                return this.jobberItems.filter(item => {
+                    const name = item.client_name || '';
+                    const address = item.shipping_address || '';
+                    const number = item.number || '';
                     return name.toLowerCase().includes(query) ||
                            address.toLowerCase().includes(query) ||
-                           date.toLowerCase().includes(query);
+                           number.toLowerCase().includes(query);
                 });
             },
-            get paginatedJobberQuotes() {
+            get paginatedItems() {
                 const start = (this.jobberCurrentPage - 1) * this.itemsPerPage;
                 const end = start + this.itemsPerPage;
-                return this.filteredJobberQuotes.slice(start, end);
+                return this.filteredItems.slice(start, end);
             },
             get totalJobberPages() {
-                return Math.ceil(this.filteredJobberQuotes.length / this.itemsPerPage);
+                return Math.ceil(this.filteredItems.length / this.itemsPerPage);
             },
             get paginatedSaberisExports() {
                 const start = (this.saberisCurrentPage - 1) * this.itemsPerPage;
@@ -446,7 +460,7 @@
                 const absB = Math.abs(b);
                 const diff = Math.abs(a - b);
 
-                if (a === b) { 
+                if (a === b) {
                     return true;
                 } else if (a === 0 || b === 0 || (absA + absB < Number.MIN_VALUE)) {
                     return diff < (epsilon * Number.MIN_VALUE);
@@ -471,7 +485,7 @@
                 }
                 return false;
             },
-            
+
             // --- COMPUTED PROPERTIES FOR TOTALS ---
             get activeCatalogs() {
                 return this.uniqueCatalogs.filter(c => !this.ignoredCatalogs.includes(c));
@@ -500,32 +514,33 @@
             },
 
             init() {
-                this.fetchJobberQuotes();
+                this.fetchJobberItems(); // Initial load
                 this.refreshExports();
                 
-                // When the user searches, reset the page to 1
                 this.$watch('jobberSearchQuery', () => {
                     this.jobberCurrentPage = 1;
                 });
             },
-            
-            async fetchJobberQuotes() {
-                if (this.isLoadingQuotes) return;
-                this.isLoadingQuotes = true;
-                const url = this.nextCursor ? `/api/jobber-quotes?cursor=${this.nextCursor}` : '/api/jobber-quotes';
+
+            async fetchJobberItems() {
+                this.isLoadingItems = true;
+                this.jobberItems = []; // Clear previous results for a new fetch
+                
+                const url = `/api/jobber-items?include_quotes=${this.includeQuotes}`;
+                
                 try {
                     const response = await fetch(url);
                     if (response.status === 401) { this.jobberAuthStatus = 'unauthorized'; return; }
-                    if (!response.ok) { throw new Error(`Failed to fetch quotes: ${response.statusText}`); }
+                    if (!response.ok) { throw new Error(`Failed to fetch items: ${response.statusText}`); }
                     this.jobberAuthStatus = 'authorized';
                     const data = await response.json();
-                    this.jobberQuotes = [...this.jobberQuotes, ...data.quotes];
-                    this.nextCursor = data.next_cursor;
-                    this.hasNextPage = data.has_next_page;
+
+                    this.jobberItems = data.items;
                 } catch (error) {
-                    console.error("Error fetching Jobber quotes:", error);
+                    console.error("Error fetching Jobber items:", error);
+                    this.jobberItems = []; // Clear on error
                 } finally {
-                    this.isLoadingQuotes = false;
+                    this.isLoadingItems = false;
                 }
             },
 
@@ -553,9 +568,10 @@
             },
 
             isReadyToSend() {
-                if (this.selectedExportIds.length === 0) return false;
+                if (!this.selectedItemId || this.selectedExportIds.length === 0) return false;
                 return this.selectedExportIds.every(id => this.getQuantityFor(id));
             },
+
 
             onPricingInputChange() {
                 if (this.saveState === 'clean' || this.saveState === 'saved') {
@@ -590,7 +606,7 @@
 
                 this.uniqueCatalogs = Array.from(newUniqueCatalogs).sort();
                 this.catalogBaseCosts = newBaseCosts;
-                
+
                 const catalogsToFetch = this.uniqueCatalogs.filter(catalog => this.originalCatalogPricingData[catalog] === undefined);
 
                 if (catalogsToFetch.length > 0) {
@@ -598,7 +614,7 @@
                         fetch(`/api/catalog-item/${catalog}`)
                             .then(response => response.ok ? response.json() : Promise.reject(`Failed to fetch ${catalog}`))
                     );
-                    
+
                     const results = await Promise.allSettled(fetchPromises);
 
                     results.forEach(result => {
@@ -632,7 +648,7 @@
                 if (margin >= 1) return cogs; // Avoid division by zero or negative
                 return cogs / (1 - margin);
             },
-            
+
             formatCurrency(amount) {
                 return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
             },
@@ -640,11 +656,11 @@
             async savePricingFactors() {
                 this.saveState = 'saving';
                 const payload = {};
-                
+
                 for (const catalog of this.uniqueCatalogs) {
                     const current = this.catalogPricingData[catalog];
                     const original = this.originalCatalogPricingData[catalog];
-                    
+
                     if (!original || !this.nearlyEquals(current.multiplier, original.multiplier) || !this.nearlyEquals(current.margin, original.margin)) {
                         payload[catalog] = {
                             multiplier: current.multiplier,
@@ -667,7 +683,7 @@
 
                     const result = await response.json();
                     if (!response.ok) throw new Error(result.error || 'Failed to save pricing factors.');
-                    
+
                     // Update the pristine cache with the successfully saved data from the server
                     result.saved_items.forEach(item => {
                         this.originalCatalogPricingData[item.catalog_id] = { ...item };
@@ -691,12 +707,14 @@
                     alert('Please ensure all selected items have a quantity greater than zero.');
                     return;
                 }
-                if (!confirm(`Are you sure you want to add items from ${this.selectedExportIds.length} export(s) to the selected Jobber Quote?`)) {
+                const selectedItem = this.jobberItems.find(item => item.id === this.selectedItemId);
+                if (!confirm(`Are you sure you want to add items from ${this.selectedExportIds.length} export(s) to ${selectedItem.type} ${selectedItem.number}?`)) {
                     return;
                 }
+
                 this.isSending = true;
                 const payload = {
-                    quoteId: this.selectedQuoteId,
+                    quoteId: this.selectedItemId,
                     exports: this.selectedExportIds.map(id => ({
                         saberis_id: id,
                         quantity: this.quantities[id]
@@ -727,7 +745,7 @@
                 if (!confirm('Delete all saberis exports except the 3 most recent?')) {
                     return;
                 }
-                
+
                 this.isLoading = true;
                 try {
                     const response = await fetch('/api/saberis-exports/prune', {

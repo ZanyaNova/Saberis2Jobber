@@ -438,19 +438,20 @@ class JobberClient:
         Returns:
             A JobPageGQL dictionary containing the list of jobs for the page
             and pagination info (next_cursor, has_next_page).
-        
+
         Raises:
             RuntimeError: If the API call fails or returns an unexpected structure.
         """
         log_message = f"Fetching a page of active jobs starting from cursor: {cursor}" if cursor else "Fetching first page of active jobs."
         print(f"INFO: {log_message}")
 
+        # CORRECTED arugment in filter from jobStatus to status
         query = """
         query GetActiveJobs($cursor: String) {
-          jobs(first: 50, after: $cursor, filter: { jobStatus: active }) {
+        jobs(first: 50, after: $cursor, filter: { status: active }) {
             edges {
-              cursor
-              node {
+            cursor
+            node {
                 id
                 jobNumber
                 title
@@ -458,12 +459,12 @@ class JobberClient:
                 client { id name }
                 property { id address { street1 city province postalCode } }
                 total
-              }
+            }
             }
             pageInfo {
-              hasNextPage
+            hasNextPage
             }
-          }
+        }
         }
         """
         variables = {"cursor": cursor} if cursor else {}
@@ -471,7 +472,7 @@ class JobberClient:
         try:
             raw_response: GraphQLData = self._post(query, variables)
             gql_response = cast(GetJobsResponseGQL, {"data": raw_response})
-            
+
             jobs_connection = gql_response.get("data", {}).get("jobs")
             if not jobs_connection:
                 raise RuntimeError("API response missing 'jobs' connection.")
@@ -482,7 +483,7 @@ class JobberClient:
 
             page_info = jobs_connection.get("pageInfo", {})
             has_next_page = page_info.get("hasNextPage", False)
-            
+
             next_cursor: Optional[str] = None
             edges = jobs_connection.get("edges", [])
             if has_next_page and edges:
@@ -499,7 +500,6 @@ class JobberClient:
         except (ConnectionRefusedError, requests.exceptions.RequestException, RuntimeError) as e:
             print(f"ERROR: Failed to fetch active jobs from Jobber: {e}")
             raise
-        
     def get_quote_with_line_items(self, quote_id: str) -> Optional[FullQuoteNodeGQL]:
         """Fetches a single quote and its line items by ID."""
         print(f"INFO: Fetching full details for Jobber Quote ID: {quote_id}")
