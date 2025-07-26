@@ -1,6 +1,5 @@
 import os
 import json
-import re
 from flask import Flask, request, redirect, url_for, render_template, jsonify, Response
 from .gsheet.catalog_manager import catalog_manager
 from dataclasses import asdict
@@ -8,8 +7,12 @@ from .saberis_ingestion import ingest_saberis_exports, SaberisExportRecord
 
 # Auth and Config
 from .jobber_auth_flow import get_authorization_url, exchange_code_for_token, get_valid_access_token, verify_state_parameter
-from .jobber_client_module import JobberClient, QuoteNodeGQL, JobNodeGQL, QuoteLineEditItemGQL, QuoteEditLineItemInputGQL
-from .jobber_models import get_line_items_from_export, SaberisOrder
+from .jobber_client_module import (
+    JobberClient, QuoteNodeGQL, JobNodeGQL, QuoteLineEditItemGQL, 
+    QuoteEditLineItemInputGQL, JobCreateLineItemGQL, JobEditLineItemGQL,
+    JobLineItemNodeGQL
+)
+from .jobber_models import get_line_items_from_export, SaberisOrder, QuoteLineItemGQL
 from typing import Dict, Any, TypedDict, List, Union, Tuple, Optional, cast
 
 # Flask App Initialization
@@ -179,49 +182,30 @@ def prune_saberis_exports_route():
     except Exception as e:
         print(f"ERROR: Could not prune Saberis exports: {e}")
         return jsonify({"error": str(e)}), 500
+    
 
 @app.route('/api/send-to-jobber', methods=['POST'])
 def send_to_jobber():
     """
-    API endpoint to add/update items on a Jobber quote from Saberis exports.
-    This function now performs a multi-step, robust update:
-    1.  Fetches all existing master "Products and Services" to create an S2J hash lookup map.
-    2.  Fetches all line items currently on the target Jobber Quote.
-    3.  Generates all desired line items from the selected Saberis exports.
-    4.  Categorizes the desired items:
-        - If an item already exists on the quote -> Add to an 'update' list.
-        - If an item is new to the quote -> Add to an 'add' list.
-    5.  For items being added, it uses the S2J map to decide whether to link to an
-        existing product or create a new one.
-    6.  Executes the 'update' and 'add' API calls separately and reports the combined result.
+    API endpoint to add/update items on a Jobber Quote or Job from Saberis exports.
+    This function now dynamically handles both item types with proper type safety.
     """
     if get_valid_access_token() is None:
         return jsonify({"error": "Not authorized with Jobber"}), 401
 
-    data: SendToJobberPayload = request.get_json()
-    quote_id = data.get('quoteId')
+    data = request.get_json()
+    item_id = data.get('itemId')
+    item_type = data.get('itemType')
     exports_payload = data.get('exports')
 
-    if not quote_id or not exports_payload:
-        return jsonify({"error": "Missing quoteId or exports data"}), 400
+    if not item_id or not item_type or not exports_payload:
+        return jsonify({"error": "Missing itemId, itemType, or exports data"}), 400
 
     jobber_client = JobberClient()
     saberis_export_records = ingest_saberis_exports()
     manifest = {item['saberis_id']: item for item in saberis_export_records}
 
-    # --- Step 1: Fetch master product list for S2J hash mapping ---
-    existing_products = jobber_client.get_all_products_and_services()
-    s2j_hash_to_id_map: Dict[str, str] = {}
-    s2j_hash_pattern: re.Pattern[str] = re.compile(r"S2J\((\w{6})\)")
-
-    for product in existing_products:
-        match: Optional[re.Match[str]] = s2j_hash_pattern.search(product['name'])
-        if match:
-            s2j_hash: str = match.group(1)
-            s2j_hash_to_id_map[s2j_hash] = product['id']
-    print(f"INFO: Created S2J product lookup map with {len(s2j_hash_to_id_map)} items.")
-
-    # --- Step 2: Generate all line items that SHOULD be on the quote ---
+    # --- Step 1: Generate all desired line items ---
     all_desired_line_items: List[QuoteLineEditItemGQL] = []
     for export_data in exports_payload:
         saberis_id, quantity = export_data.get('saberis_id'), export_data.get('quantity')
@@ -233,92 +217,77 @@ def send_to_jobber():
     if not all_desired_line_items:
         return jsonify({"error": "No valid line items could be generated"}), 400
 
-    # --- Step 3: Fetch the quote's CURRENT line items ---
-    quote_details = jobber_client.get_quote_with_line_items(quote_id)
-    if not quote_details:
-        return jsonify({"error": "Could not fetch existing quote details from Jobber."}), 500
-    existing_line_items_nodes = quote_details.get("lineItems", {}).get("nodes", [])
-    existing_items_map = {item['name']: item for item in existing_line_items_nodes}
+    # --- Step 2: Fetch existing line items and create a lookup map ---
+    existing_items_map: Dict[str, Union[QuoteLineItemGQL, JobLineItemNodeGQL]] = {}
+    if item_type == 'Quote':
+        quote_details = jobber_client.get_quote_with_line_items(item_id)
+        if quote_details:
+            nodes = quote_details.get("lineItems", {}).get("nodes", [])
+            existing_items_map = {
+                item['name']: item for item in nodes if 'name' in item
+            }
+    elif item_type == 'Job':
+        job_details = jobber_client.get_job_with_line_items(item_id)
+        if job_details:
+            nodes = job_details.get("lineItems", {}).get("nodes", [])
+            existing_items_map = {
+                item['name']: item for item in nodes if 'name' in item
+            }
+    else:
+        return jsonify({"error": f"Unsupported itemType: {item_type}"}), 400
 
-    # --- Step 4: Compare and categorize into 'add' vs 'update' lists ---
-    items_to_add: List[QuoteLineEditItemGQL] = []
-    items_to_update: List[QuoteEditLineItemInputGQL] = []
+    # --- Step 3: Compare and categorize into 'add' vs 'update' lists ---
+    # Explicitly type the lists to resolve the "Unknown" type errors
+    items_to_add: List[Union[QuoteLineEditItemGQL, JobCreateLineItemGQL]] = []
+    items_to_update: List[Union[QuoteEditLineItemInputGQL, JobEditLineItemGQL]] = []
 
     for desired_item in all_desired_line_items:
         desired_name = desired_item['name']
-        if desired_name in existing_items_map:
-            # This item already exists on the quote, check if quantity differs.
-            existing_item = existing_items_map[desired_name]
-            if existing_item.get('quantity') != desired_item.get('quantity'):
+        existing_item = existing_items_map.get(desired_name)
+
+        if existing_item:
+            # Safely get the ID, as it's required for an update
+            existing_item_id = existing_item.get('id')
+            if existing_item_id and existing_item.get('quantity') != desired_item.get('quantity'):
                 items_to_update.append({
-                    "lineItemId": existing_item['id'],
+                    "lineItemId": existing_item_id,
                     "quantity": desired_item['quantity']
                 })
         else:
-            # This is a new item for this quote. Now we apply the S2J logic.
-            final_item_to_add = desired_item.copy()
-            match = s2j_hash_pattern.search(final_item_to_add['name'])
-            if match:
-                s2j_hash = match.group(1)
-                existing_product_id = s2j_hash_to_id_map.get(s2j_hash)
-                if existing_product_id:
-                    # Link to the existing master product
-                    final_item_to_add['productOrServiceId'] = existing_product_id
-                    final_item_to_add['saveToProductsAndServices'] = False
-                else:
-                    # No master product found, so create a new one
-                    final_item_to_add['saveToProductsAndServices'] = True
-            else:
-                final_item_to_add['saveToProductsAndServices'] = True
-            
-            items_to_add.append(final_item_to_add)
+            items_to_add.append(desired_item)
 
-    # --- Step 5: Execute API Calls ---
-    update_success, update_message = jobber_client.update_line_items_on_quote(quote_id, items_to_update)
-    add_success, add_message = jobber_client.add_line_items_to_quote(quote_id, items_to_add)
+    # --- Step 4: Execute API Calls based on type ---
+    update_success, add_success = True, True
+    update_message, add_message = "No items to update.", "No items to add."
 
-    # --- Step 6: Report Combined Results ---
+    if item_type == 'Quote':
+        if items_to_update:
+            # Cast to the specific list type expected by the function
+            quote_updates = cast(List[QuoteEditLineItemInputGQL], items_to_update)
+            update_success, update_message = jobber_client.update_line_items_on_quote(item_id, quote_updates)
+        if items_to_add:
+            quote_additions = cast(List[QuoteLineEditItemGQL], items_to_add)
+            add_success, add_message = jobber_client.add_line_items_to_quote(item_id, quote_additions)
+    elif item_type == 'Job':
+        if items_to_update:
+            job_updates = cast(List[JobEditLineItemGQL], items_to_update)
+            update_success, update_message = jobber_client.update_line_items_on_job(item_id, job_updates)
+        if items_to_add:
+            job_additions = cast(List[JobCreateLineItemGQL], items_to_add)
+            add_success, add_message = jobber_client.add_line_items_to_job(item_id, job_additions)
+
+    # --- Step 5: Report Combined Results ---
     error_messages: list[str] = []
     if not update_success:
-        error_messages.append(f"Update failed: {update_message}")
+        error_messages.append(f"Update failed: {update_message}") 
     if not add_success:
         error_messages.append(f"Add failed: {add_message}")
 
     if error_messages:
         return jsonify({"error": " | ".join(error_messages)}), 500
 
-    # --- Build the definitive, informative success message ---
-    num_updated = len(items_to_update)
-    num_added_to_quote = len(items_to_add)
-    
-    # This is our new counter
-    num_new_products_created = sum(1 for item in items_to_add if item.get('saveToProductsAndServices'))
-
-    success_parts: list[str] = []
-
-    if num_updated > 0:
-        plural = "s" if num_updated > 1 else ""
-        success_parts.append(f"updated {num_updated} item{plural} on the quote")
-    
-    if num_added_to_quote > 0:
-        plural = "s" if num_added_to_quote > 1 else ""
-        success_parts.append(f"added {num_added_to_quote} new line item{plural}")
-
-    # Add the new product count to the message, only if it's relevant
-    if num_new_products_created > 0:
-        plural = "s" if num_new_products_created > 1 else ""
-        success_parts.append(f"creating {num_new_products_created} new product{plural} in your library")
-
-    if not success_parts:
-        return jsonify({"message": "Success: No changes were needed for the quote."})
-
-    # Join the parts with commas and a final 'and' for readability
-    if len(success_parts) > 1:
-        final_message = f"Success: Successfully {', '.join(success_parts[:-1])} and {success_parts[-1]}."
-    else:
-        final_message = f"Success: Successfully {success_parts[0]}."
-        
-    return jsonify({"message": final_message})
+    success_message = f"Successfully processed items for {item_type} ID {item_id}. Added: {len(items_to_add)}, Updated: {len(items_to_update)}."
+    return jsonify({"message": success_message})
 
 @app.route('/api/catalog-item/<string:catalog_id>', methods=['GET'])
 def get_catalog_item(catalog_id: str) -> Union[Response, Tuple[Response, int]]:

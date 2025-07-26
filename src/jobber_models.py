@@ -125,6 +125,43 @@ class JobPageGQL(TypedDict):
     next_cursor: Optional[str]
     has_next_page: bool
 
+class JobCreateLineItemGQL(TypedDict, total=False):
+    """
+    Represents a single line item being added to an existing JOB.
+    Aligns with 'JobCreateLineItemAttributes' from the Jobber API documentation.
+    Fields marked with '!' in the API are required here.
+    """
+    # Required fields
+    name: str
+    quantity: float
+    unitPrice: float
+    saveToProductsAndServices: bool
+
+    # Optional fields
+    description: Optional[str]
+    category: Optional[str]  # Corresponds to ProductsAndServicesCategory enum
+    taxable: Optional[bool]
+    quoteLineItemId: Optional[str] # This is an EncodedId
+    unitCost: Optional[float]
+
+class JobEditLineItemGQL(TypedDict, total=False):
+    """
+    Input for updating a single line item on a JOB.
+    Aligns with 'JobEditLineItemAttributes' from the Jobber API documentation.
+    """
+    # Required fields
+    lineItemId: str # This is an EncodedId
+
+    # Optional fields
+    name: Optional[str]
+    description: Optional[str]
+    unitPrice: Optional[float]
+    quantity: Optional[float]
+    taxable: Optional[bool]
+    category: Optional[str] # Corresponds to ProductsAndServicesCategory enum
+    unitCost: Optional[float]
+
+
 # ---------------------------------------------------------------------------
 # Saberis Application Models
 # ---------------------------------------------------------------------------

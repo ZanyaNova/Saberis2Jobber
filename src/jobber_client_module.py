@@ -8,8 +8,11 @@ import re
 from typing import Any, Optional, Tuple, List, TypedDict, Union, Dict, cast
 
 from .jobber_auth_flow import get_valid_access_token
-from .jobber_models import SaberisOrder, QuoteCreateInput, ShippingAddress, QuoteLineItemGQL, QuoteLineEditItemGQL, PageInfoGQL, JobNodeGQL, JobPageGQL, GetJobsResponseGQL
-
+from .jobber_models import (
+    SaberisOrder, QuoteCreateInput, ShippingAddress, QuoteLineItemGQL, 
+    QuoteLineEditItemGQL, PageInfoGQL, JobNodeGQL, JobPageGQL, 
+    GetJobsResponseGQL, JobCreateLineItemGQL, JobEditLineItemGQL # Add Job models here
+)
 JOBBER_GRAPHQL_URL = "https://api.getjobber.com/api/graphql"
 
 # --- GraphQL TypedDicts (Specific to Jobber API Structure) ---
@@ -26,6 +29,54 @@ class GraphQLResponseWrapper(TypedDict):
     errors: Optional[List[GraphQLErrorDetail]]
 class UserError(TypedDict): message: str; path: List[Union[str, int]] # Jobber's userError structure
 
+class JobCreateLineItemsInputGQL(TypedDict):
+    """The 'input' object for the jobCreateLineItems mutation."""
+    jobId: str
+    lineItems: List[JobCreateLineItemGQL]
+
+class JobCreateLineItemsVariablesGQL(TypedDict):
+    """The complete variables for the jobCreateLineItems mutation."""
+    input: JobCreateLineItemsInputGQL
+
+class JobCreateLineItemsPayloadGQL(TypedDict):
+    """The 'jobCreateLineItems' payload in the response data."""
+    userErrors: Optional[List[UserError]]
+    # The payload also returns the job and createdLineItems, which we can add if needed for verification.
+
+# --- Structures for Editing Line Items on a Job ---
+class JobEditLineItemsInputGQL(TypedDict):
+    """The 'input' object for the jobEditLineItems mutation."""
+    jobId: str
+    lineItems: List[JobEditLineItemGQL]
+
+class JobEditLineItemsVariablesGQL(TypedDict):
+    """The complete variables for the jobEditLineItems mutation."""
+    input: JobEditLineItemsInputGQL
+
+class JobEditLineItemsPayloadGQL(TypedDict):
+    """The 'jobEditLineItems' payload in the response data."""
+    userErrors: Optional[List[UserError]]
+
+class JobLineItemNodeGQL(TypedDict, total=False):
+    """Represents a single line item on a Job."""
+    id: str
+    name: str
+    quantity: float
+    unitPrice: float
+
+class JobLineItemConnectionGQL(TypedDict):
+    nodes: List[JobLineItemNodeGQL]
+
+class FullJobNodeGQL(TypedDict, total=False):
+    """Represents a single, detailed job fetched by its ID."""
+    id: str
+    lineItems: JobLineItemConnectionGQL
+
+class GetJobDataGQL(TypedDict):
+    job: FullJobNodeGQL
+
+class GetJobResponseGQL(TypedDict):
+    data: GetJobDataGQL
 
 # --- Structures for Approved Quote Query ---
 
@@ -527,7 +578,67 @@ class JobberClient:
             print(f"ERROR: Failed to fetch details for quote {quote_id}: {e}")
             return None
 
-    # --- NEW METHOD ---
+    def add_line_items_to_job(self, job_id: str, line_items: List[JobCreateLineItemGQL]) -> Tuple[bool, str]:
+        """Adds NEW line items to an existing Jobber job."""
+        if not line_items:
+            return True, "No new line items to add."
+            
+        print(f"INFO: Adding {len(line_items)} new line item(s) to Jobber Job ID: {job_id}")
+        mutation = """
+        mutation JobCreateLineItems($input: JobCreateLineItemsInput!) {
+        jobCreateLineItems(input: $input) {
+            userErrors { message path }
+        }
+        }
+        """
+        variables: JobCreateLineItemsVariablesGQL = {
+            "input": {
+                "jobId": job_id,
+                "lineItems": line_items
+            }
+        }
+        try:
+            raw_data = self._post(mutation, variables) # type: ignore
+            response_data = cast(Dict[str, JobCreateLineItemsPayloadGQL], raw_data)
+            result = response_data["jobCreateLineItems"]
+            user_errors = result.get("userErrors")
+            if user_errors:
+                error_messages = [f"Path: {e.get('path', 'N/A')}, Message: {e.get('message', 'Unknown error')}" for e in user_errors]
+                return False, f"Failed to add line items to job due to user errors: {'; '.join(error_messages)}"
+            return True, f"Successfully added {len(line_items)} new line item(s) to job {job_id}."
+        except (ConnectionRefusedError, requests.exceptions.RequestException, RuntimeError) as e:
+            return False, f"An error occurred while adding line items to job: {e}"
+
+    def update_line_items_on_job(self, job_id: str, line_items: List[JobEditLineItemGQL]) -> Tuple[bool, str]:
+        """Updates existing line items on a job."""
+        if not line_items:
+            return True, "No line items needed updating."
+
+        print(f"INFO: Updating {len(line_items)} line item(s) on Jobber Job ID: {job_id}")
+        mutation = """
+        mutation JobEditLineItems($input: JobEditLineItemsInput!) {
+        jobEditLineItems(input: $input) {
+            userErrors { message path }
+        }
+        }
+        """
+        variables: JobEditLineItemsVariablesGQL = {
+            "input": {
+                "jobId": job_id,
+                "lineItems": line_items
+            }
+        }
+        try:
+            raw_data = self._post(mutation, variables) # type: ignore
+            response_data = cast(Dict[str, JobEditLineItemsPayloadGQL], raw_data)
+            result = response_data["jobEditLineItems"]
+            user_errors = result.get("userErrors")
+            if user_errors:
+                error_messages = [f"Path: {e.get('path', 'N/A')}, Message: {e.get('message', 'Unknown error')}" for e in user_errors]
+                return False, f"Failed to update line items on job due to user errors: {'; '.join(error_messages)}"
+            return True, f"Successfully updated {len(line_items)} line item(s) on job {job_id}."
+        except (ConnectionRefusedError, requests.exceptions.RequestException, RuntimeError) as e:
+            return False, f"An error occurred while updating line items on job: {e}"
     def update_line_items_on_quote(self, quote_id: str, line_items: List[QuoteEditLineItemInputGQL]) -> Tuple[bool, str]:
         """Updates existing line items on a quote."""
         if not line_items:
@@ -760,6 +871,33 @@ class JobberClient:
             
         return client_id, property_id
     
+    def get_job_with_line_items(self, job_id: str) -> Optional[FullJobNodeGQL]:
+        """Fetches a single job and its line items by ID."""
+        print(f"INFO: Fetching full details for Jobber Job ID: {job_id}")
+        query = """
+        query GetJobDetails($jobId: EncodedId!) {
+        job(id: $jobId) {
+            id
+            lineItems {
+            nodes {
+                id
+                name
+                quantity
+                unitPrice
+            }
+            }
+        }
+        }
+        """
+        variables = {"jobId": job_id}
+        try:
+            raw_data = self._post(query, variables)
+            response = cast(GetJobResponseGQL, {"data": raw_data})
+            return response["data"]["job"]
+        except (ConnectionRefusedError, requests.exceptions.RequestException, RuntimeError) as e:
+            print(f"ERROR: Failed to fetch details for job {job_id}: {e}")
+            return None
+
     def get_approved_quotes(self, cursor: Optional[str] = None) -> QuotePageGQL:
         """
         Fetches a single page of approved quotes from Jobber.

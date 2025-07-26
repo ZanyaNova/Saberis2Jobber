@@ -700,7 +700,6 @@
                 }
             },
 
-            // --- UNCHANGED "SEND TO JOBBER" and "PRUNE" METHODS ---
             async sendToJobber() {
                 if (this.isSending) return;
                 if (!this.isReadyToSend()) {
@@ -708,18 +707,26 @@
                     return;
                 }
                 const selectedItem = this.jobberItems.find(item => item.id === this.selectedItemId);
+                if (!selectedItem) {
+                    alert('Error: No Jobber item selected.');
+                    return;
+                }
+
                 if (!confirm(`Are you sure you want to add items from ${this.selectedExportIds.length} export(s) to ${selectedItem.type} ${selectedItem.number}?`)) {
                     return;
                 }
 
                 this.isSending = true;
+                
                 const payload = {
-                    quoteId: this.selectedItemId,
+                    itemId: this.selectedItemId,
+                    itemType: selectedItem.type, // Pass the type ('Job' or 'Quote')
                     exports: this.selectedExportIds.map(id => ({
                         saberis_id: id,
                         quantity: this.quantities[id]
                     }))
                 };
+
                 try {
                     const response = await fetch('/api/send-to-jobber', {
                         method: 'POST',
