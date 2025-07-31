@@ -86,6 +86,30 @@ except gspread.exceptions.WorksheetNotFound:
 # Assign the final, confirmed worksheet object to the constant.
 GSHEET_CONFIG_SHEET: Final[Worksheet] = config_sheet
 
+# --- Open Workbook and Specific Worksheet: Saberis Exports ---
+# This sheet will store the JSON data for each processed Saberis export.
+EXPORTS_SHEET_NAME: Final[str] = "SaberisExports"
+try:
+    # First, just try to get the worksheet.
+    exports_sheet: Worksheet = GSHEET_WORKBOOK.worksheet(EXPORTS_SHEET_NAME)
+except gspread.exceptions.WorksheetNotFound:
+    # If it doesn't exist, try to create it.
+    print(f"INFO: Worksheet '{EXPORTS_SHEET_NAME}' not found. Attempting to create it now.")
+    try:
+        exports_sheet = GSHEET_WORKBOOK.add_worksheet(title=EXPORTS_SHEET_NAME, rows=100, cols=4)
+        # Set up headers for the new sheet. We will store most data as a JSON string.
+        exports_sheet.update(values=[['saberis_id', 'original_filename', 'ingested_at', 'data']], range_name='A1:D1')
+        exports_sheet.format('A1:D1', {'textFormat': {'bold': True}})
+        print(f"INFO: Successfully created new worksheet '{EXPORTS_SHEET_NAME}'.")
+    except gspread.exceptions.APIError as api_error:
+        # If creating it fails because it *already* exists (a race condition),
+        # we can now be confident it's safe to just fetch it.
+        print(f"INFO: Could not create worksheet (it likely already exists). Fetching it. Details: {api_error}")
+        exports_sheet = GSHEET_WORKBOOK.worksheet(EXPORTS_SHEET_NAME)
+
+# Assign the final, confirmed worksheet object to the constant.
+GSHEET_SABERIS_EXPORTS: Final[Worksheet] = exports_sheet
+
 # --- Open Workbook and Specific Worksheet: Log ---
 LOG_SHEET_NAME: Final[str] = "Log"
 

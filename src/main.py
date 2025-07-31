@@ -1,5 +1,4 @@
 import os
-import json
 import requests
 from flask import Flask, request, redirect, url_for, render_template, jsonify, Response
 from .gsheet.catalog_manager import catalog_manager
@@ -146,28 +145,30 @@ def get_saberis_exports():
     """
     API endpoint to run the ingestion logic and return the manifest,
     now enriched with detailed, type-safe catalog and cost data.
+    The data is read directly from the manifest, not from files.
     """
+    # ingest_saberis_exports now returns the full records from the Google Sheet
     manifest_records: List[SaberisExportRecord] = ingest_saberis_exports()
     
     enriched_records: List[EnrichedSaberisExportRecord] = []
     for record in manifest_records:
         try:
-            with open(record['stored_path'], 'r') as f:
-                saberis_data: Any = json.load(f)
+            # The raw JSON is now part of the record itself
+            saberis_data: Any = record['raw_data']
             
             saberis_order = SaberisOrder.from_json(saberis_data)
             
-            # Create a new, strongly-typed dictionary instead of modifying the old one.
-            # This is clean, explicit, and respects the TypedDict contract.
+            # Create a new, strongly-typed dictionary.
             enriched_record: EnrichedSaberisExportRecord = {
                 **record,  # Unpack all key-value pairs from the original record
                 "catalogs": list(saberis_order.catalogs),
-                "costs_by_catalog": saberis_order.catalog_to_total_cost, # Use the pre-calculated dictionary
+                "costs_by_catalog": saberis_order.catalog_to_total_cost,
             }
             enriched_records.append(enriched_record)
 
-        except (IOError, json.JSONDecodeError) as e:
-            print(f"WARN: Could not process file {record['stored_path']} for enrichment. Skipping. Error: {e}")
+        except (KeyError, TypeError) as e:
+            # Handle cases where raw_data might be missing or malformed
+            print(f"WARN: Could not process record {record.get('saberis_id')} for enrichment. Skipping. Error: {e}")
             
     return jsonify(enriched_records)
 

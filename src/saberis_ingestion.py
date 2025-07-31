@@ -1,73 +1,63 @@
-# src/saberis_ingestion.py
-import os
 import json
 import uuid
 from datetime import datetime
-from typing import List, TypedDict
+from typing import List, TypedDict, Any
 
 from .saberis_api_client import SaberisAPIClient
-
-# ... (Type Definitions for Saberis JSON remain the same) ...
-class _SaberisShippingDict(TypedDict, total=False):
-    Address: str
-    City: str
-    StateOrProvince: str
-
-class _SaberisCustomerDict(TypedDict, total=False):
-    Name: str
-
-class _SaberisOrderDict(TypedDict, total=False):
-    Username: str
-    Date: str
-    Customer: _SaberisCustomerDict
-    Shipping: _SaberisShippingDict
-
-class _SaberisOrderDocumentDict(TypedDict, total=False):
-    Order: _SaberisOrderDict
-
-class SaberisWrapperDict(TypedDict, total=False):
-    SaberisOrderDocument: _SaberisOrderDocumentDict
+from .gsheet.gsheet_config import GSHEET_SABERIS_EXPORTS
 
 class SaberisExportRecord(TypedDict):
     saberis_id: str
     original_filename: str # This will now be the Saberis doc GUID
-    stored_path: str
+    stored_path: str # We'll keep this field but it will be empty or null
     ingested_at: str
     export_date: str
     customer_name: str
     username: str
     shipping_address: str
     sent_to_jobber: bool
-
-# Define file and directory paths
-SRC_DIR: str = os.path.dirname(os.path.abspath(__file__))
-PROCESSED_EXPORTS_DIR: str = os.path.join(SRC_DIR, "processed_exports")
-MANIFEST_FILE: str = os.path.join(SRC_DIR, "saberis_exports.json")
+    raw_data: Any
 
 def ingest_saberis_exports() -> List[SaberisExportRecord]:
     """
-    Scans for new Saberis exports via the API, processes them, and updates the manifest.
-    Returns the complete, sorted list of records.
+    Scans for new Saberis exports via the API, processes them, and updates the
+    SaberisExports Google Sheet. Returns the complete, sorted list of records.
     """
-    os.makedirs(PROCESSED_EXPORTS_DIR, exist_ok=True)
-    if not os.path.exists(MANIFEST_FILE):
-        with open(MANIFEST_FILE, 'w') as f:
-            json.dump([], f)
+    print("INFO: Ingesting from Google Sheet based storage.")
+    # Fetch all existing records from the sheet. get_all_records() returns a list of dicts.
+    sheet_records = GSHEET_SABERIS_EXPORTS.get_all_records()
+    manifest: List[SaberisExportRecord] = []
+    processed_guids = set()
 
-    with open(MANIFEST_FILE, 'r') as f:
-        manifest: List[SaberisExportRecord] = json.load(f)
-        processed_guids = {record['original_filename'] for record in manifest}
+    for record in sheet_records:
+        try:
+            # The 'data' cell contains a JSON string, so we parse it.
+            data_dict = json.loads(record.get('data', '{}'))
+            
+            # Reconstruct the full record object in memory
+            full_record = {
+                "saberis_id": record.get('saberis_id'),
+                "original_filename": record.get('original_filename'),
+                "ingested_at": record.get('ingested_at'),
+                **data_dict # Unpack the JSON data here
+            }
+            manifest.append(full_record)
+            processed_guids.add(record.get('original_filename'))
+        except json.JSONDecodeError:
+            print(f"WARN: Could not parse JSON data for record: {record.get('saberis_id')}. Skipping.")
+            continue
 
     client = SaberisAPIClient()
     unexported_docs = client.get_unexported_documents()
 
     if not unexported_docs:
         print("No new documents to ingest or API call failed.")
-        manifest.sort(key=lambda record: record['ingested_at'], reverse=True)
+        manifest.sort(key=lambda r: r['ingested_at'], reverse=True)
         return manifest
         
+    new_rows_to_append = []
     for doc_header in unexported_docs:
-        doc_guid = doc_header.get("guid") # Use 'guid' as the identifier
+        doc_guid = doc_header.get("guid")
         if not doc_guid or doc_guid in processed_guids:
             continue
             
@@ -78,94 +68,64 @@ def ingest_saberis_exports() -> List[SaberisExportRecord]:
             print(f"Failed to fetch document {doc_guid}")
             continue
 
-        try:
-            order_data = doc.get("SaberisOrderDocument", {}).get("Order", {})
-            customer_name = order_data.get("Customer", {}).get("Name", "N/A")
-            username = order_data.get("Username", "N/A")
-            export_date = order_data.get("Date", "N/A")
-            
-            shipping = order_data.get("Shipping", {})
-            address_parts = [
-                shipping.get('Address'),
-                shipping.get('City'),
-                shipping.get('StateOrProvince')
-            ]
-            shipping_address = ", ".join(part for part in address_parts if part)
-
-            saberis_uuid = str(uuid.uuid4())
-            destination_filename = f"{saberis_uuid}.json"
-            destination_path = os.path.join(PROCESSED_EXPORTS_DIR, destination_filename)
-
-            new_record: SaberisExportRecord = {
-                "saberis_id": saberis_uuid,
-                "original_filename": doc_guid, # Store the GUID
-                "stored_path": destination_path,
-                "ingested_at": datetime.now().isoformat(),
-                "export_date": export_date,
-                "customer_name": customer_name,
-                "username": username,
-                "shipping_address": shipping_address,
-                "sent_to_jobber": False
-            }
-
-            with open(destination_path, 'w') as f:
-                json.dump(doc, f, indent=2)
-
-            manifest.append(new_record)
-            processed_guids.add(doc_guid)
-            print(f"Successfully ingested and stored: {doc_guid}")
-
-        except (KeyError, IOError) as e:
-            print(f"Error processing document {doc_guid}: {e}")
-
-    with open(MANIFEST_FILE, 'w') as f:
-        json.dump(manifest, f, indent=4)
+        order_data = doc.get("SaberisOrderDocument", {}).get("Order", {})
         
-    manifest.sort(key=lambda record: record['ingested_at'], reverse=True)
-    
+        # This is the data we'll store in the JSON blob
+        data_to_store = {
+            "customer_name": order_data.get("Customer", {}).get("Name", "N/A"),
+            "username": order_data.get("Username", "N/A"),
+            "export_date": order_data.get("Date", "N/A"),
+            "shipping_address": ", ".join(filter(None, [
+                order_data.get("Shipping", {}).get('Address'),
+                order_data.get("Shipping", {}).get('City'),
+                order_data.get("Shipping", {}).get('StateOrProvince')
+            ])),
+            "sent_to_jobber": False,
+            "raw_data": doc, # Store the entire original document
+            "stored_path": "" # No longer used
+        }
+
+        # This is the row that gets written to the Google Sheet
+        new_row = [
+            str(uuid.uuid4()),      # saberis_id
+            doc_guid,               # original_filename
+            datetime.now().isoformat(), # ingested_at
+            json.dumps(data_to_store) # The JSON blob
+        ]
+        new_rows_to_append.append(new_row)
+        processed_guids.add(doc_guid)
+
+    if new_rows_to_append:
+        GSHEET_SABERIS_EXPORTS.append_rows(new_rows_to_append, value_input_option='USER_ENTERED')
+        print(f"Successfully appended {len(new_rows_to_append)} new records to the Google Sheet.")
+        # Re-fetch the manifest to include the newly added items
+        return ingest_saberis_exports()
+
+    manifest.sort(key=lambda r: r['ingested_at'], reverse=True)
     return manifest
 
 def prune_saberis_exports(keep_count: int = 3) -> int:
     """
-    Deletes the oldest Saberis export records and their corresponding files,
-    keeping only the specified number of most recent records.
-
-    Args:
-        keep_count: The number of recent exports to keep.
-
-    Returns:
-        The number of records that were pruned.
+    Deletes the oldest Saberis export records from the Google Sheet, keeping
+    only the specified number of most recent records.
     """
-    if not os.path.exists(MANIFEST_FILE):
-        return 0
+    print(f"INFO: Pruning exports, keeping the most recent {keep_count}.")
+    all_records = GSHEET_SABERIS_EXPORTS.get_all_records()
 
-    with open(MANIFEST_FILE, 'r') as f:
-        manifest: List[SaberisExportRecord] = json.load(f)
-
-    if len(manifest) <= keep_count:
+    if len(all_records) <= keep_count:
+        print("INFO: No records to prune.")
         return 0
 
     # Sort by ingested_at date, descending (newest first)
-    manifest.sort(key=lambda record: record['ingested_at'], reverse=True)
+    all_records.sort(key=lambda r: r.get('ingested_at', ''), reverse=True)
 
-    records_to_keep = manifest[:keep_count]
-    records_to_prune = manifest[keep_count:]
+    # Determine which rows to delete. The sheet is 1-indexed, plus a header row.
+    # So, the index of a record in the list corresponds to `record_index + 2` in the sheet.
+    num_to_delete = len(all_records) - keep_count
+    start_index_to_delete = keep_count + 2 # +1 for header, +1 for 1-based index
+    end_index_to_delete = start_index_to_delete + num_to_delete - 1
+
+    GSHEET_SABERIS_EXPORTS.delete_rows(start_index_to_delete, end_index_to_delete)
     
-    pruned_count = 0
-    for record in records_to_prune:
-        try:
-            stored_path = record.get("stored_path")
-            if stored_path and os.path.exists(stored_path):
-                os.remove(stored_path)
-                print(f"Deleted export file: {stored_path}")
-            pruned_count += 1
-        except OSError as e:
-            print(f"Error deleting file {record.get('stored_path')}: {e}")
-            # We'll continue trying to update the manifest even if a file deletion fails
-
-    # Save the pruned list back to the manifest
-    with open(MANIFEST_FILE, 'w') as f:
-        json.dump(records_to_keep, f, indent=4)
-
-    print(f"Pruned {pruned_count} old export records from the manifest.")
-    return pruned_count
+    print(f"SUCCESS: Pruned {num_to_delete} old export records from the Google Sheet.")
+    return num_to_delete
