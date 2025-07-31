@@ -1,3 +1,4 @@
+# .dockerignore
 venv/
 credential*.json
 .env
