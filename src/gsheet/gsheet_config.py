@@ -6,6 +6,7 @@ Ensures required variables are strings and present.
 import gspread
 from gspread import Client, Spreadsheet, Worksheet
 import os
+import time
 import json
 from typing import Final
 from dotenv import load_dotenv
@@ -61,18 +62,30 @@ except Exception as e:
         f"Original error: {e}"
     ) from e
 
+
 # --- Open Workbook and Specific Worksheet: Config ---
 # This sheet will store key-value pairs for configuration, like API tokens.
 CONFIG_SHEET_NAME: Final[str] = "Config"
 try:
-    config_sheet_test: Worksheet = GSHEET_WORKBOOK.worksheet(CONFIG_SHEET_NAME)
+    # First, just try to get the worksheet.
+    config_sheet: Worksheet = GSHEET_WORKBOOK.worksheet(CONFIG_SHEET_NAME)
 except gspread.exceptions.WorksheetNotFound:
-    print(f"INFO: Worksheet '{CONFIG_SHEET_NAME}' not found. Creating it now.")
-    config_sheet_test: Worksheet = GSHEET_WORKBOOK.add_worksheet(title=CONFIG_SHEET_NAME, rows=10, cols=2)
-    # Using explicit keyword arguments to resolve the static analysis error.
-    config_sheet_test.update(values=[['Key', 'Value']], range_name='A1:B1')
-    config_sheet_test.format('A1:B1', {'textFormat': {'bold': True}})
-GSHEET_CONFIG_SHEET: Final[Worksheet] = config_sheet_test
+    # If it doesn't exist, try to create it.
+    print(f"INFO: Worksheet '{CONFIG_SHEET_NAME}' not found. Attempting to create it now.")
+    try:
+        config_sheet = GSHEET_WORKBOOK.add_worksheet(title=CONFIG_SHEET_NAME, rows=10, cols=2)
+        # Set up headers for the new sheet
+        config_sheet.update(values=[['Key', 'Value']], range_name='A1:B1')
+        config_sheet.format('A1:B1', {'textFormat': {'bold': True}})
+        print(f"INFO: Successfully created new worksheet '{CONFIG_SHEET_NAME}'.")
+    except gspread.exceptions.APIError as api_error:
+        # If creating it fails because it *already* exists (the race condition),
+        # we can now be confident it's safe to just fetch it.
+        print(f"INFO: Could not create worksheet (it likely already exists). Fetching it. Details: {api_error}")
+        config_sheet = GSHEET_WORKBOOK.worksheet(CONFIG_SHEET_NAME)
+
+# Assign the final, confirmed worksheet object to the constant.
+GSHEET_CONFIG_SHEET: Final[Worksheet] = config_sheet
 
 # --- Open Workbook and Specific Worksheet: Log ---
 LOG_SHEET_NAME: Final[str] = "Log"
