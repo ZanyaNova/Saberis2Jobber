@@ -1,4 +1,4 @@
-# .dockerignore
+.dockerignore
 venv/
 credential*.json
 .env
@@ -7,3 +7,4 @@ __pycache__/
 jobber_tokens.json
 non-active-sample-orders/
 **/processed_exports
+*.json
