@@ -243,12 +243,13 @@ def send_to_jobber():
         for desired_item in all_desired_line_items:
             existing_item = existing_items_map.get(desired_item['name'])
             if existing_item:
-                # FIXED: Safely get the ID and check it before using.
                 existing_id = existing_item.get('id')
                 if existing_id and existing_item.get('quantity') != desired_item.get('quantity'):
                     items_to_update.append({"lineItemId": existing_id, "quantity": desired_item['quantity']})
             else:
-                items_to_add.append(desired_item)
+                new_quote_item = desired_item.copy()
+                new_quote_item['category'] = 'PRODUCT'
+                items_to_add.append(new_quote_item)
 
     elif item_type == 'Job':
         job_details = jobber_client.get_job_with_line_items(item_id)
