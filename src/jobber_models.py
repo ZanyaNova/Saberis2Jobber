@@ -9,7 +9,7 @@ import json
 from .gsheet.catalog_manager import catalog_manager
 from dataclasses import dataclass, asdict, field
 from datetime import datetime
-from typing import List, TypedDict, Optional, Any, Union, cast, Dict
+from typing import List, TypedDict, Optional, Any, Union, cast, Dict, Literal
 from .text_utilities import remove_curly_braces_and_content
 
 # ---------------------------------------------------------------------------
@@ -125,24 +125,23 @@ class JobPageGQL(TypedDict):
     next_cursor: Optional[str]
     has_next_page: bool
 
-class JobCreateLineItemGQL(TypedDict, total=False):
+class JobCreateLineItemGQL(TypedDict):
     """
     Represents a single line item being added to an existing JOB.
     Aligns with 'JobCreateLineItemAttributes' from the Jobber API documentation.
-    Fields marked with '!' in the API are required here.
     """
     # Required fields
     name: str
     quantity: float
     unitPrice: float
+    unitCost: float
     saveToProductsAndServices: bool
+    category: Literal["PRODUCT", "SERVICE"]
 
     # Optional fields
     description: Optional[str]
-    category: Optional[str]  # Corresponds to ProductsAndServicesCategory enum
     taxable: Optional[bool]
-    quoteLineItemId: Optional[str] # This is an EncodedId
-    unitCost: Optional[float]
+    quoteLineItemId: Optional[str]
 
 class JobEditLineItemGQL(TypedDict, total=False):
     """
@@ -171,13 +170,20 @@ class QuoteLineEditItemGQL(TypedDict):
     Represents a single line item being added to an existing quote.
     Aligns with the 'QuoteCreateLineItemAttributes' from the Jobber API.
     """
+    # Required fields
     name: str
     quantity: float
     unitPrice: float
-    description: Optional[str]
-    unitCost: Optional[float]
-    taxable: bool
+    unitCost: float
+    category: Literal["PRODUCT", "SERVICE"]
     saveToProductsAndServices: bool
+
+    # Optional fields to align with JobCreateLineItemGQL
+    taxable: Optional[bool]
+    quoteLineItemId: Optional[str]
+
+    # Fields specific to Quotes
+    description: Optional[str]
     productOrServiceId: Optional[str]
 
 class QuoteLineItemGQL(TypedDict, total=True):
@@ -487,10 +493,12 @@ def get_line_items_from_export(stored_path: str, ui_quantity: int) -> List[Quote
             "quantity": li.quantity * ui_quantity,
             "unitPrice": li.cost,
             "description": jobber_description,
-            "unitCost": li.cost if li.cost > 0 else None,
+            "unitCost": li.cost if li.cost > 0 else 0.0,
             "taxable": False,
+            "category": "PRODUCT",
             "saveToProductsAndServices": True,
             "productOrServiceId": None,
+            "quoteLineItemId": None
         }
         jobber_lines.append(line_item)
     return jobber_lines

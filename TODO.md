@@ -1,3 +1,7 @@
+CAN YOU REALLY NOT ADD AN EXISTING PRODUCT/SERVICE TO A JOB?
+
+Check out editing a job
+
 - Make it jobs only (rather than for approved quotes) IF JOBS LET YOU PAST IT COST AND PRICE 
 - Add logic updating jobs, and chosing quote/jobs logic accordingly
 

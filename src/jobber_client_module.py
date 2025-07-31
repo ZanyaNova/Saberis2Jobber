@@ -31,12 +31,7 @@ class UserError(TypedDict): message: str; path: List[Union[str, int]] # Jobber's
 
 class JobCreateLineItemsInputGQL(TypedDict):
     """The 'input' object for the jobCreateLineItems mutation."""
-    jobId: str
     lineItems: List[JobCreateLineItemGQL]
-
-class JobCreateLineItemsVariablesGQL(TypedDict):
-    """The complete variables for the jobCreateLineItems mutation."""
-    input: JobCreateLineItemsInputGQL
 
 class JobCreateLineItemsPayloadGQL(TypedDict):
     """The 'jobCreateLineItems' payload in the response data."""
@@ -229,6 +224,11 @@ class GetQuoteResponseGQL(TypedDict):
 
 
 # --- TypedDicts for Editing Line Items ---
+class JobCreateLineItemsVariablesGQL(TypedDict):
+    """The complete variables for the jobCreateLineItems mutation."""
+    jobId: str
+    input: JobCreateLineItemsInputGQL
+
 class QuoteEditLineItemInputGQL(TypedDict):
     """Input for updating a single line item."""
     lineItemId: str
@@ -584,31 +584,46 @@ class JobberClient:
             return True, "No new line items to add."
             
         print(f"INFO: Adding {len(line_items)} new line item(s) to Jobber Job ID: {job_id}")
+        
+        # This mutation signature is now correct, accepting both $jobId and $input
         mutation = """
-        mutation JobCreateLineItems($input: JobCreateLineItemsInput!) {
-        jobCreateLineItems(input: $input) {
+        mutation JobCreateLineItems($jobId: EncodedId!, $input: JobCreateLineItemsInput!) {
+        jobCreateLineItems(jobId: $jobId, input: $input) {
             userErrors { message path }
+            createdLineItems { id }
         }
         }
         """
+        
+        # This variables object now perfectly matches the required JSON structure and our TypedDicts
         variables: JobCreateLineItemsVariablesGQL = {
+            "jobId": job_id,
             "input": {
-                "jobId": job_id,
                 "lineItems": line_items
             }
         }
+        
         try:
+            # The variables are now correctly typed and structured.
             raw_data = self._post(mutation, variables) # type: ignore
-            response_data = cast(Dict[str, JobCreateLineItemsPayloadGQL], raw_data)
-            result = response_data["jobCreateLineItems"]
+            
+            result = raw_data.get("jobCreateLineItems", {})
+            
             user_errors = result.get("userErrors")
             if user_errors:
                 error_messages = [f"Path: {e.get('path', 'N/A')}, Message: {e.get('message', 'Unknown error')}" for e in user_errors]
                 return False, f"Failed to add line items to job due to user errors: {'; '.join(error_messages)}"
-            return True, f"Successfully added {len(line_items)} new line item(s) to job {job_id}."
+
+            created_items = result.get("createdLineItems")
+            if created_items is None:
+                return False, "Failed to add line items: API response did not confirm creation."
+
+            return True, f"Successfully added {len(created_items)} new line item(s) to job {job_id}."
+
         except (ConnectionRefusedError, requests.exceptions.RequestException, RuntimeError) as e:
             return False, f"An error occurred while adding line items to job: {e}"
-
+        
+    
     def update_line_items_on_job(self, job_id: str, line_items: List[JobEditLineItemGQL]) -> Tuple[bool, str]:
         """Updates existing line items on a job."""
         if not line_items:
