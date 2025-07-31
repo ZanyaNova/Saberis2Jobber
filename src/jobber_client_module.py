@@ -41,11 +41,11 @@ class JobCreateLineItemsPayloadGQL(TypedDict):
 # --- Structures for Editing Line Items on a Job ---
 class JobEditLineItemsInputGQL(TypedDict):
     """The 'input' object for the jobEditLineItems mutation."""
-    jobId: str
     lineItems: List[JobEditLineItemGQL]
 
 class JobEditLineItemsVariablesGQL(TypedDict):
     """The complete variables for the jobEditLineItems mutation."""
+    jobId: str
     input: JobEditLineItemsInputGQL
 
 class JobEditLineItemsPayloadGQL(TypedDict):
@@ -423,6 +423,7 @@ class JobberClient:
             error_type_name = type(e).__name__
             print(f"ERROR: A network request to Jobber API failed for {log_query_identifier} ({error_type_name}): {e}")
             raise
+    
     def get_all_products_and_services(self) -> List[Dict[str, str]]:
         """
         Fetches all products and services from Jobber, handling pagination.
@@ -432,9 +433,10 @@ class JobberClient:
         all_products: List[Dict[str, str]] = []
         cursor: Optional[str] = None
         
+        # CORRECTED: Changed 'productsAndServices' to 'productOrServices'
         query = """
         query GetAllProducts($cursor: String) {
-          productsAndServices(first: 250, after: $cursor) {
+          productOrServices(first: 250, after: $cursor) {
             edges {
               cursor
               node {
@@ -454,7 +456,8 @@ class JobberClient:
                 variables = {"cursor": cursor} if cursor else {}
                 raw_data = self._post(query, variables)
                 
-                connection = raw_data.get("productsAndServices", {})
+                # CORRECTED: Changed key to 'productOrServices'
+                connection = raw_data.get("productOrServices", {})
                 edges = connection.get("edges", [])
                 
                 for edge in edges:
@@ -631,15 +634,17 @@ class JobberClient:
 
         print(f"INFO: Updating {len(line_items)} line item(s) on Jobber Job ID: {job_id}")
         mutation = """
-        mutation JobEditLineItems($input: JobEditLineItemsInput!) {
-        jobEditLineItems(input: $input) {
+        mutation JobEditLineItems($jobId: EncodedId!, $input: JobEditLineItemsInput!) {
+        jobEditLineItems(jobId: $jobId, input: $input) {
             userErrors { message path }
         }
         }
         """
+        
+        # Construct the variables object to match the new mutation signature.
         variables: JobEditLineItemsVariablesGQL = {
+            "jobId": job_id,
             "input": {
-                "jobId": job_id,
                 "lineItems": line_items
             }
         }
