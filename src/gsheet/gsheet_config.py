@@ -6,21 +6,36 @@ Ensures required variables are strings and present.
 import gspread
 from gspread import Client, Spreadsheet, Worksheet
 import os
+import json
 from typing import Final
 from dotenv import load_dotenv
+import base64
 
 load_dotenv()
 
 # --- Google Sheets API Authentication ---
 try:
-    GSHEET_ACCOUNT: Final[Client] = gspread.service_account()
+    creds_base64_str = os.environ.get('GOOGLE_CREDENTIALS_BASE64')
+    if creds_base64_str:
+        print("INFO: Authenticating with Google Sheets using Base64 credentials from environment variable.")
+        creds_json_str = base64.b64decode(creds_base64_str).decode('utf-8')
+        creds_dict = json.loads(creds_json_str)
+        account_client: Client = gspread.service_account_from_dict(creds_dict)
+    else:
+        # Fallback for local development
+        print("INFO: GOOGLE_CREDENTIALS_BASE64 not set. Falling back to default service_account.json file.")
+        account_client: Client = gspread.service_account()
+
+    # Make the single, final assignment to the constant
+    GSHEET_ACCOUNT: Final[Client] = account_client
+
 except Exception as e:
-    # Provide a more informative error message if service account setup fails
     raise RuntimeError(
-        "Failed to authenticate with Google Sheets using service account. "
-        "Ensure 'credentials.json' (or your specified service account file) is correctly set up. "
+        "Failed to authenticate with Google Sheets from Base64 credentials. "
+        "Please ensure GOOGLE_CREDENTIALS_BASE64 is set correctly. "
         f"Original error: {e}"
     ) from e
+
 
 # --- Workbook URL ---
 WORKBOOK_URL_ENV: Final[str | None] = os.environ.get('WORKBOOK_URL')

@@ -447,7 +447,7 @@ def jobber_callback_route():
     print(f"Received authorization code from Jobber: {code[:20]}...") 
     if exchange_code_for_token(code):
         print("Authorization successful. Tokens stored.")
-        return redirect(url_for('home', message="Authorization successful! You can now start the worker if it's not running."))
+        return redirect(url_for('home', message="Authorization successful!"))
     else:
         print("Failed to exchange code for tokens.")
         return redirect(url_for('home', message="Authorization failed: Could not exchange code for token. Check server logs."))

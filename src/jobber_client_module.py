@@ -329,7 +329,6 @@ class JobberClient:
         # Always attempt to get the latest valid token via the auth flow
         current_token = get_valid_access_token()
         if not current_token:
-            # This error will be caught by the calling methods or main.py's worker loop
             raise ConnectionRefusedError(
                 "Jobber API: No valid access token available. Please authorize or check token refresh."
             )
