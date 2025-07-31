@@ -39,10 +39,12 @@ class JobCreateLineItemsPayloadGQL(TypedDict):
     # The payload also returns the job and createdLineItems, which we can add if needed for verification.
 
 # --- Structures for Editing Line Items on a Job ---
+# This should only contain the line items, as per the Jobber API Schema.
 class JobEditLineItemsInputGQL(TypedDict):
     """The 'input' object for the jobEditLineItems mutation."""
     lineItems: List[JobEditLineItemGQL]
 
+# This is the correct structure for the overall variables object.
 class JobEditLineItemsVariablesGQL(TypedDict):
     """The complete variables for the jobEditLineItems mutation."""
     jobId: str
@@ -304,8 +306,14 @@ class QuoteCreateDataPayloadGQL(TypedDict): quote: Optional[QuoteObjectGQL]; use
 
 # General type for variables passed to _post; can be expanded with more specific variable types
 GraphQLMutationVariables = Union[
-    ClientCreateVariablesGQL, PropertyCreateVariablesGQL, QuoteCreateVariablesGQL, # Add other specific variable types here
-    Dict[str, Any] # Fallback for less strictly typed variables
+    ClientCreateVariablesGQL,
+    PropertyCreateVariablesGQL,
+    QuoteCreateVariablesGQL,
+    QuoteCreateLineItemsVariablesGQL, # For adding items to a quote
+    QuoteEditLineItemsVariablesGQL,   # For editing items on a quote
+    JobCreateLineItemsVariablesGQL,   # For adding items to a job
+    JobEditLineItemsVariablesGQL,     # For editing items on a job
+    Dict[str, Any]                    # Fallback for any other structure
 ]
 # General type for the 'data' field returned by _post after extracting from GraphQLResponseWrapper
 GraphQLData = Dict[str, Any]
@@ -554,6 +562,7 @@ class JobberClient:
         except (ConnectionRefusedError, requests.exceptions.RequestException, RuntimeError) as e:
             print(f"ERROR: Failed to fetch active jobs from Jobber: {e}")
             raise
+
     def get_quote_with_line_items(self, quote_id: str) -> Optional[FullQuoteNodeGQL]:
         """Fetches a single quote and its line items by ID."""
         print(f"INFO: Fetching full details for Jobber Quote ID: {quote_id}")
@@ -585,9 +594,9 @@ class JobberClient:
         """Adds NEW line items to an existing Jobber job."""
         if not line_items:
             return True, "No new line items to add."
-            
+
         print(f"INFO: Adding {len(line_items)} new line item(s) to Jobber Job ID: {job_id}")
-        
+
         # This mutation signature is now correct, accepting both $jobId and $input
         mutation = """
         mutation JobCreateLineItems($jobId: EncodedId!, $input: JobCreateLineItemsInput!) {
@@ -597,7 +606,7 @@ class JobberClient:
         }
         }
         """
-        
+
         # This variables object now perfectly matches the required JSON structure and our TypedDicts
         variables: JobCreateLineItemsVariablesGQL = {
             "jobId": job_id,
@@ -605,13 +614,13 @@ class JobberClient:
                 "lineItems": line_items
             }
         }
-        
+
         try:
             # The variables are now correctly typed and structured.
             raw_data = self._post(mutation, variables) # type: ignore
-            
+
             result = raw_data.get("jobCreateLineItems", {})
-            
+
             user_errors = result.get("userErrors")
             if user_errors:
                 error_messages = [f"Path: {e.get('path', 'N/A')}, Message: {e.get('message', 'Unknown error')}" for e in user_errors]
@@ -624,8 +633,7 @@ class JobberClient:
             return True, f"Successfully added {len(created_items)} new line item(s) to job {job_id}."
 
         except (ConnectionRefusedError, requests.exceptions.RequestException, RuntimeError) as e:
-            return False, f"An error occurred while adding line items to job: {e}"
-        
+            return False, f"An error occurred while adding line items to job: {e}"    
     
     def update_line_items_on_job(self, job_id: str, line_items: List[JobEditLineItemGQL]) -> Tuple[bool, str]:
         """Updates existing line items on a job."""
@@ -633,6 +641,8 @@ class JobberClient:
             return True, "No line items needed updating."
 
         print(f"INFO: Updating {len(line_items)} line item(s) on Jobber Job ID: {job_id}")
+        
+        # Corrected Mutation: Now accepts jobId as a top-level argument.
         mutation = """
         mutation JobEditLineItems($jobId: EncodedId!, $input: JobEditLineItemsInput!) {
         jobEditLineItems(jobId: $jobId, input: $input) {
@@ -641,24 +651,29 @@ class JobberClient:
         }
         """
         
-        # Construct the variables object to match the new mutation signature.
+        # Corrected Variables: Structure now matches the API's expectation.
         variables: JobEditLineItemsVariablesGQL = {
             "jobId": job_id,
             "input": {
                 "lineItems": line_items
             }
         }
+        
         try:
-            raw_data = self._post(mutation, variables) # type: ignore
+            raw_data = self._post(mutation, variables)
             response_data = cast(Dict[str, JobEditLineItemsPayloadGQL], raw_data)
-            result = response_data["jobEditLineItems"]
+            result = response_data.get("jobEditLineItems", {}) # Use .get() for safety
+            
             user_errors = result.get("userErrors")
             if user_errors:
                 error_messages = [f"Path: {e.get('path', 'N/A')}, Message: {e.get('message', 'Unknown error')}" for e in user_errors]
                 return False, f"Failed to update line items on job due to user errors: {'; '.join(error_messages)}"
+            
             return True, f"Successfully updated {len(line_items)} line item(s) on job {job_id}."
+            
         except (ConnectionRefusedError, requests.exceptions.RequestException, RuntimeError) as e:
             return False, f"An error occurred while updating line items on job: {e}"
+    
     def update_line_items_on_quote(self, quote_id: str, line_items: List[QuoteEditLineItemInputGQL]) -> Tuple[bool, str]:
         """Updates existing line items on a quote."""
         if not line_items:

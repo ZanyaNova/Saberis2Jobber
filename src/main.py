@@ -206,6 +206,8 @@ def send_to_jobber():
     saberis_export_records = ingest_saberis_exports()
     manifest = {item['saberis_id']: item for item in saberis_export_records}
 
+    # --- Step 1: Generate all desired line items from Saberis exports ---
+    # This initial list uses the QuoteLineEditItemGQL format as a starting point.
     all_desired_line_items: List[QuoteLineEditItemGQL] = []
     for export_data in exports_payload:
         saberis_id, quantity = export_data.get('saberis_id'), export_data.get('quantity')
@@ -217,14 +219,17 @@ def send_to_jobber():
     if not all_desired_line_items:
         return jsonify({"error": "No valid line items could be generated from the selected exports."}), 400
 
+    # --- Step 2: Fetch existing line items from the target Jobber item ---
     existing_items_map: Dict[str, Union[QuoteLineItemGQL, JobLineItemNodeGQL]] = {}
-    items_to_process: Union[List[QuoteLineEditItemGQL], List[JobCreateLineItemGQL]] = []
+    items_to_add: Union[List[QuoteLineEditItemGQL], List[JobCreateLineItemGQL]] = []
+    items_to_update: Union[List[QuoteEditLineItemInputGQL], List[JobEditLineItemGQL]] = []
 
     if item_type == 'Quote':
         quote_details = jobber_client.get_quote_with_line_items(item_id)
         if quote_details:
             nodes = quote_details.get("lineItems", {}).get("nodes", [])
             existing_items_map = {item['name']: item for item in nodes if 'name' in item}
+        # For quotes, the desired items are already in the correct format.
         items_to_process = all_desired_line_items
 
     elif item_type == 'Job':
@@ -233,57 +238,52 @@ def send_to_jobber():
             nodes = job_details.get("lineItems", {}).get("nodes", [])
             existing_items_map = {item['name']: item for item in nodes if 'name' in item}
 
+        # For jobs, we must transform the line items into the correct structure.
+        # This includes checking if the product already exists in Jobber's main list.
         existing_products = jobber_client.get_all_products_and_services()
         existing_product_names = {p['name'] for p in existing_products}
 
         transformed_job_items: List[JobCreateLineItemGQL] = []
         for item in all_desired_line_items:
+            # The name is the key Jobber uses to match to an existing product.
             product_exists = item['name'] in existing_product_names
-            
-            # Defensive check for unitCost on new products
-            current_unit_cost = item.get('unitCost') or 0.0
-            if not product_exists and current_unit_cost == 0.0:
-                final_unit_cost = 0.01 # Set a nominal cost for new items
-            else:
-                final_unit_cost = current_unit_cost
 
             job_line_item: JobCreateLineItemGQL = {
                 "name": item['name'],
                 "quantity": item['quantity'],
-                "unitPrice": 0.1,
-                "unitCost": final_unit_cost,
-                "saveToProductsAndServices": not product_exists,
+                "unitPrice": 0,
                 "category": "PRODUCT",
                 "description": item.get('description'),
+                "unitCost": item.get('unitCost') or 0.0,
                 "taxable": item.get('taxable', False),
-                "quoteLineItemId": item.get('quoteLineItemId'),
+                # If product name exists, don't save a new one. Otherwise, do.
+                "saveToProductsAndServices": not product_exists,
+                "quoteLineItemId": None
             }
-            # Remove optional keys if they are None to create a cleaner payload
-            if job_line_item["quoteLineItemId"] is None:
-                del job_line_item["quoteLineItemId"] #type:ignore
-
             transformed_job_items.append(job_line_item)
         items_to_process = transformed_job_items
     else:
         return jsonify({"error": f"Unsupported itemType: {item_type}"}), 400
 
-    items_to_add: Union[List[QuoteLineEditItemGQL], List[JobCreateLineItemGQL]] = []
-    items_to_update: Union[List[QuoteEditLineItemInputGQL], List[JobEditLineItemGQL]] = []
-    
+    # --- Step 3: Compare desired vs. existing to build add/update lists ---
     for desired_item in items_to_process:
         desired_name = desired_item['name']
         existing_item = existing_items_map.get(desired_name)
 
         if existing_item:
+            # Item exists, check if quantity needs updating.
             existing_item_id = existing_item.get('id')
             if existing_item_id and existing_item.get('quantity') != desired_item.get('quantity'):
+                # The structure for updating quantity is the same for both Jobs and Quotes
                 items_to_update.append({
                     "lineItemId": existing_item_id,
                     "quantity": desired_item['quantity']
                 })
         else:
+            # Item is new and needs to be added.
             items_to_add.append(desired_item)
 
+    # --- Step 4: Execute API Calls based on type ---
     update_success, add_success = True, True
     update_message, add_message = "No items to update.", "No items to add."
 
@@ -306,6 +306,8 @@ def send_to_jobber():
     except (ConnectionRefusedError, requests.exceptions.RequestException, RuntimeError) as e:
         return jsonify({"error": f"A server or network error occurred: {e}"}), 500
 
+
+    # --- Step 5: Report Combined Results ---
     error_messages: list[str] = []
     if not update_success:
         error_messages.append(f"Update failed: {update_message}")
