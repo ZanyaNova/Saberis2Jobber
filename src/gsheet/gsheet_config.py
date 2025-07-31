@@ -6,7 +6,6 @@ Ensures required variables are strings and present.
 import gspread
 from gspread import Client, Spreadsheet, Worksheet
 import os
-import time
 import json
 from typing import Final
 from dotenv import load_dotenv
