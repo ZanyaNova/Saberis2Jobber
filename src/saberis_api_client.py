@@ -1,10 +1,12 @@
 """
 Client for interacting with the Saberis API.
+Handles session token fetching, caching, and automatic refreshing on expiry.
 """
 import requests
 from typing import Optional, List, Dict, Any
 
 from .saberis_config import SABERIS_AUTH_TOKEN, SABERIS_BASE_URL
+# We are importing the string-based token handlers now.
 from .saberis_token_storage import save_token, load_token
 
 class SaberisAuthenticationError(Exception):
@@ -14,64 +16,79 @@ class SaberisAuthenticationError(Exception):
 class SaberisAPIClient:
     def __init__(self):
         self.base_url = SABERIS_BASE_URL
-        self.auth_token_param = SABERIS_AUTH_TOKEN
-        self._token: Optional[str] = load_token()
+        # This is the long-lived token from the .env file used to get session tokens.
+        self.permanent_auth_token = SABERIS_AUTH_TOKEN
+        # This will hold the short-lived session token (a string), loaded from the Google Sheet.
+        self._session_token: Optional[str] = load_token()
 
-    def _get_auth_token(self) -> Optional[str]:
-        """Retrieves a new auth token from the Saberis API."""
-        if self._token:
-            return self._token
-            
+    def _fetch_new_session_token(self) -> str:
+        """
+        Fetches a new short-lived session token from the Saberis API using the permanent token.
+        Saves the new token to the Google Sheet and returns it.
+        """
+        print("INFO: Fetching new Saberis session token...")
         token_url = f"{self.base_url}/api/v1/token"
         try:
-            # The API expects a GET request with the token as a query parameter
-            response = requests.get(token_url, params={"authToken": self.auth_token_param}, timeout=30)
+            # The API expects a GET request with the permanent token as a query parameter.
+            response = requests.get(token_url, params={"authToken": self.permanent_auth_token}, timeout=30)
             response.raise_for_status()
             
-            # The response body is a raw string, not JSON
+            # The response body is the raw session token string.
             token = response.text.strip('"')
             
-            if token:
-                save_token(token)
-                self._token = token
-                return self._token
-            # If no token is returned, raise an error
-            raise SaberisAuthenticationError("Received an empty token from Saberis.")
+            if not token:
+                raise SaberisAuthenticationError("Received an empty session token from Saberis.")
+            
+            # save_token now correctly accepts a string.
+            save_token(token)
+            self._session_token = token
+            print("INFO: Successfully fetched and saved new Saberis session token.")
+            return self._session_token
+
         except requests.exceptions.RequestException as e:
-            print(f"Error fetching Saberis auth token: {e}")
-            # Raise the custom exception to be caught by the UI layer
-            raise SaberisAuthenticationError(f"Could not connect to Saberis to get an authentication token. Please check the `SABERIS_AUTH_TOKEN` in your .env file and ensure the Saberis service is available. Original error: {e}") from e
-    
-    def get_unexported_documents(self) -> Optional[List[Dict[str, Any]]]:
-        """Gets the list of available, unexported documents."""
-        token = self._get_auth_token()
-        if not token:
-            return None
+            print(f"ERROR: Could not connect to Saberis to get a session token: {e}")
+            # Raise the custom exception to be caught by the UI layer or calling function.
+            raise SaberisAuthenticationError(f"Could not connect to Saberis to get a session token. Original error: {e}") from e
 
-        exports_url = f"{self.base_url}/api/v1/export"
-        headers = {"Authorization": f"Bearer {token}"}
+    def _get_valid_session_token(self) -> str:
+        """
+        Ensures a valid session token is available, fetching a new one if the cache is empty.
+        """
+        if self._session_token:
+            return self._session_token
+        return self._fetch_new_session_token()
 
+    def _execute_request(self, endpoint: str, retry_on_401: bool = True) -> Any:
+        """
+        Executes a GET request to a Saberis API endpoint with proper auth and retry logic.
+        """
         try:
-            response = requests.get(exports_url, headers=headers, timeout=30)
+            token = self._get_valid_session_token()
+            url = f"{self.base_url}{endpoint}"
+            headers = {"Authorization": f"Bearer {token}"}
+            
+            response = requests.get(url, headers=headers, timeout=30)
+            
+            # If the token was invalid (401), clear it, get a new one, and retry the request once.
+            if response.status_code == 401 and retry_on_401:
+                print("WARN: Saberis API returned 401. Session token may have expired. Refreshing...")
+                self._session_token = None # Clear the expired token from the instance cache
+                # _fetch_new_session_token will get a new token and save it.
+                self._fetch_new_session_token()
+                # Retry the request, but this time don't allow another retry to prevent infinite loops.
+                return self._execute_request(endpoint, retry_on_401=False)
+
             response.raise_for_status()
             return response.json()
+
         except requests.exceptions.RequestException as e:
-            print(f"Error fetching unexported documents from Saberis: {e}")
-            return None
+            print(f"ERROR: Saberis API request to '{endpoint}' failed: {e}")
+            return None # Return None on network errors
+
+    def get_unexported_documents(self) -> Optional[List[Dict[str, Any]]]:
+        """Gets the list of available, unexported documents."""
+        return self._execute_request("/api/v1/export")
 
     def get_export_document_by_id(self, doc_guid: str) -> Optional[Dict[str, Any]]:
         """Gets the full JSON document for a given document GUID."""
-        token = self._get_auth_token()
-        if not token:
-            return None
-
-        document_url = f"{self.base_url}/api/v1/export/json/{doc_guid}"
-        headers = {"Authorization": f"Bearer {token}"}
-        
-        try:
-            response = requests.get(document_url, headers=headers, timeout=30)
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            print(f"Error fetching document '{doc_guid}' from Saberis: {e}")
-            return None
+        return self._execute_request(f"/api/v1/export/json/{doc_guid}")

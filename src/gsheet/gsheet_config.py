@@ -61,8 +61,21 @@ except Exception as e:
         f"Original error: {e}"
     ) from e
 
+# --- Open Workbook and Specific Worksheet: Config ---
+# This sheet will store key-value pairs for configuration, like API tokens.
+CONFIG_SHEET_NAME: Final[str] = "Config"
+try:
+    config_sheet_test: Worksheet = GSHEET_WORKBOOK.worksheet(CONFIG_SHEET_NAME)
+except gspread.exceptions.WorksheetNotFound:
+    print(f"INFO: Worksheet '{CONFIG_SHEET_NAME}' not found. Creating it now.")
+    config_sheet_test: Worksheet = GSHEET_WORKBOOK.add_worksheet(title=CONFIG_SHEET_NAME, rows=10, cols=2)
+    # Using explicit keyword arguments to resolve the static analysis error.
+    config_sheet_test.update(values=[['Key', 'Value']], range_name='A1:B1')
+    config_sheet_test.format('A1:B1', {'textFormat': {'bold': True}})
+GSHEET_CONFIG_SHEET: Final[Worksheet] = config_sheet_test
+
 # --- Open Workbook and Specific Worksheet: Log ---
-LOG_SHEET_NAME: Final[str] = "Log"  # Define the sheet name as a constant
+LOG_SHEET_NAME: Final[str] = "Log"
 
 try:
     GSHEET_LOGSHEET: Final[Worksheet] = GSHEET_WORKBOOK.worksheet(LOG_SHEET_NAME)

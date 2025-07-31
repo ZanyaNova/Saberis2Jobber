@@ -1,45 +1,87 @@
-import os
 import json
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, cast
+from .gsheet.gsheet_config import GSHEET_CONFIG_SHEET
 
-# The single, clear environment variable name we will use.
-ENV_VAR_NAME = "JOBBER_API_TOKEN"
+# The key we will search for in the 'Key' column of our Config sheet.
+KEY_NAME = "JOBBER_API_TOKEN"
 
 def load_token() -> Optional[Dict[str, Any]]:
     """
-    Loads the Jobber token dictionary from the JOBBER_API_TOKEN environment variable.
-    
+    Loads the Jobber token dictionary from the Google Sheet.
+
+    It searches the 'Config' sheet for a cell with the value of KEY_NAME,
+    then reads the JSON string from the adjacent cell to the right.
+
     Returns:
-        The token dictionary if the variable exists and is valid JSON, otherwise None.
+        The token dictionary if found and valid, otherwise None.
     """
-    token_str = os.getenv(ENV_VAR_NAME)
-    if not token_str:
-        print(f"Warning: {ENV_VAR_NAME} environment variable not found.")
-        return None
+    print(f"INFO: Attempting to load '{KEY_NAME}' from Google Sheet...")
     try:
-        return json.loads(token_str)
+        # .find() returns a Cell object or None if not found.
+        key_cell = GSHEET_CONFIG_SHEET.find(KEY_NAME, in_column=1)  #type:ignore
+
+        # Explicitly check for None. This is the correct way to handle "not found".
+        if key_cell is None:
+            print(f"INFO: Key '{KEY_NAME}' not found in the Config sheet.")
+            return None
+
+        # Get the value from the adjacent cell in the 'Value' column.
+        token_str = GSHEET_CONFIG_SHEET.cell(key_cell.row, key_cell.col + 1).value
+        
+        if not token_str:
+            print(f"INFO: Found key '{KEY_NAME}' but its value is empty.")
+            return None
+
+        # The value from the sheet is a string, so we need to parse it as JSON.
+        return cast(Dict[str, Any], json.loads(token_str))
+
     except json.JSONDecodeError:
-        print(f"Error: Could not decode {ENV_VAR_NAME}. Ensure it is valid JSON.")
+        print(f"ERROR: Could not decode the value for '{KEY_NAME}'. Ensure it is valid JSON in the sheet.")
+        return None
+    except Exception as e:
+        # This will catch other potential gspread or network errors.
+        print(f"ERROR: An unexpected error occurred while loading the token from the sheet: {e}")
         return None
 
 def save_token(token: Dict[str, Any]) -> None:
     """
-    "Saves" the Jobber token in a stateless environment.
-    
-    This function's main purpose is to display the token dictionary as a JSON string
-    so it can be manually copied and updated in the .env file or hosting provider's
-    environment variables.
+    Saves the Jobber token dictionary as a JSON string to the Google Sheet.
+
+    If the key already exists, it updates the value. If not, it appends a new row.
     """
-    print("\n--- NEW/UPDATED JOBBER TOKEN ---")
-    print("To persist this token, copy the following line into your .env file:")
-    print(f"{ENV_VAR_NAME}='{json.dumps(token)}'")
-    print("----------------------------------\n")
+    print(f"INFO: Saving '{KEY_NAME}' to Google Sheet...")
+    try:
+        # Convert the token dictionary to a JSON string for storage.
+        token_str = json.dumps(token)
+        
+        # Try to find the key first to see if we need to update or append.
+        key_cell = GSHEET_CONFIG_SHEET.find(KEY_NAME, in_column=1)  #type:ignore
+        
+        # If find() returns a Cell object, update the adjacent cell.
+        if key_cell:
+            GSHEET_CONFIG_SHEET.update_cell(key_cell.row, key_cell.col + 1, token_str)
+            print(f"INFO: Successfully updated token for '{KEY_NAME}'.")
+        # If find() returns None, the key wasn't found, so create it.
+        else:
+            print(f"INFO: Key '{KEY_NAME}' not found. Appending a new row.")
+            GSHEET_CONFIG_SHEET.append_row([KEY_NAME, token_str])
+            print(f"INFO: Successfully created and saved token for '{KEY_NAME}'.")
+
+    except Exception as e:
+        print(f"ERROR: An unexpected error occurred while saving the token to the sheet: {e}")
+
 
 def clear_tokens() -> None:
     """
-    "Clears" the tokens by instructing the user to remove the environment variable.
-    In a stateless environment, we can't delete the variable, so we guide the user.
+    Clears the Jobber token from the Google Sheet by blanking the value cell.
     """
-    print("\n--- CLEAR JOBBER TOKEN ---")
-    print(f"To clear the token, remove the {ENV_VAR_NAME} line from your .env file.")
-    print("--------------------------\n")
+    print(f"INFO: Clearing '{KEY_NAME}' from Google Sheet...")
+    try:
+        key_cell = GSHEET_CONFIG_SHEET.find(KEY_NAME, in_column=1) #type:ignore
+        if key_cell:
+            GSHEET_CONFIG_SHEET.update_cell(key_cell.row, key_cell.col + 1, "")
+            print(f"INFO: Successfully cleared token for '{KEY_NAME}'.")
+        else:
+            print(f"INFO: Key '{KEY_NAME}' was not found; nothing to clear.")
+    except Exception as e:
+        print(f"ERROR: An unexpected error occurred while clearing the token: {e}")
