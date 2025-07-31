@@ -7,6 +7,10 @@ from typing import Optional, List, Dict, Any
 from .saberis_config import SABERIS_AUTH_TOKEN, SABERIS_BASE_URL
 from .saberis_token_storage import save_token, load_token
 
+class SaberisAuthenticationError(Exception):
+    """Custom exception for Saberis authentication failures."""
+    pass
+
 class SaberisAPIClient:
     def __init__(self):
         self.base_url = SABERIS_BASE_URL
@@ -31,11 +35,13 @@ class SaberisAPIClient:
                 save_token(token)
                 self._token = token
                 return self._token
-            return None
+            # If no token is returned, raise an error
+            raise SaberisAuthenticationError("Received an empty token from Saberis.")
         except requests.exceptions.RequestException as e:
             print(f"Error fetching Saberis auth token: {e}")
-            return None
-
+            # Raise the custom exception to be caught by the UI layer
+            raise SaberisAuthenticationError(f"Could not connect to Saberis to get an authentication token. Please check the `SABERIS_AUTH_TOKEN` in your .env file and ensure the Saberis service is available. Original error: {e}") from e
+    
     def get_unexported_documents(self) -> Optional[List[Dict[str, Any]]]:
         """Gets the list of available, unexported documents."""
         token = self._get_auth_token()

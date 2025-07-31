@@ -14,7 +14,7 @@ from .jobber_client_module import (
     JobLineItemNodeGQL
 )
 from .jobber_models import get_line_items_from_export, SaberisOrder, QuoteLineItemGQL
-from typing import Dict, Any, TypedDict, List, Union, Tuple, Optional, cast
+from typing import Dict, Any, TypedDict, List, Union, Tuple, Optional, cast, Set
 
 # Flask App Initialization
 app = Flask(__name__)
@@ -186,10 +186,11 @@ def prune_saberis_exports_route():
     
 
 @app.route('/api/send-to-jobber', methods=['POST'])
+@app.route('/api/send-to-jobber', methods=['POST'])
 def send_to_jobber():
     """
     API endpoint to add/update items on a Jobber Quote or Job from Saberis exports.
-    This function now dynamically handles both item types with proper type safety.
+    This version is refactored for improved clarity and performance.
     """
     if get_valid_access_token() is None:
         return jsonify({"error": "Not authorized with Jobber"}), 401
@@ -206,108 +207,109 @@ def send_to_jobber():
     saberis_export_records = ingest_saberis_exports()
     manifest = {item['saberis_id']: item for item in saberis_export_records}
 
-    # --- Step 1: Generate all desired line items from Saberis exports ---
-    # This initial list uses the QuoteLineEditItemGQL format as a starting point.
-    all_desired_line_items: List[QuoteLineEditItemGQL] = []
+    # --- Step 1: Generate and aggregate all desired line items ---
+    all_desired_line_items_raw: List[QuoteLineEditItemGQL] = []
     for export_data in exports_payload:
         saberis_id, quantity = export_data.get('saberis_id'), export_data.get('quantity')
         if saberis_id and quantity and saberis_id in manifest:
             stored_path = manifest[saberis_id]['stored_path']
             line_items = get_line_items_from_export(stored_path, quantity)
-            all_desired_line_items.extend(line_items)
+            all_desired_line_items_raw.extend(line_items)
 
+    aggregated_items: Dict[str, QuoteLineEditItemGQL] = {}
+    for item in all_desired_line_items_raw:
+        item_name = item["name"]
+        if item_name in aggregated_items:
+            aggregated_items[item_name]["quantity"] += item["quantity"]
+        else:
+            aggregated_items[item_name] = item
+    
+    all_desired_line_items = list(aggregated_items.values())
+    
     if not all_desired_line_items:
         return jsonify({"error": "No valid line items could be generated from the selected exports."}), 400
 
-    # --- Step 2: Fetch existing line items from the target Jobber item ---
-    existing_items_map: Dict[str, Union[QuoteLineItemGQL, JobLineItemNodeGQL]] = {}
+    # --- Step 2: Determine items to add/update and transform if necessary ---
     items_to_add: Union[List[QuoteLineEditItemGQL], List[JobCreateLineItemGQL]] = []
     items_to_update: Union[List[QuoteEditLineItemInputGQL], List[JobEditLineItemGQL]] = []
+    existing_items_map: Dict[str, Union[QuoteLineItemGQL, JobLineItemNodeGQL]] = {}
 
     if item_type == 'Quote':
         quote_details = jobber_client.get_quote_with_line_items(item_id)
         if quote_details:
             nodes = quote_details.get("lineItems", {}).get("nodes", [])
             existing_items_map = {item['name']: item for item in nodes if 'name' in item}
-        # For quotes, the desired items are already in the correct format.
-        items_to_process = all_desired_line_items
+
+        for desired_item in all_desired_line_items:
+            existing_item = existing_items_map.get(desired_item['name'])
+            if existing_item:
+                # FIXED: Safely get the ID and check it before using.
+                existing_id = existing_item.get('id')
+                if existing_id and existing_item.get('quantity') != desired_item.get('quantity'):
+                    items_to_update.append({"lineItemId": existing_id, "quantity": desired_item['quantity']})
+            else:
+                items_to_add.append(desired_item)
 
     elif item_type == 'Job':
         job_details = jobber_client.get_job_with_line_items(item_id)
         if job_details:
             nodes = job_details.get("lineItems", {}).get("nodes", [])
             existing_items_map = {item['name']: item for item in nodes if 'name' in item}
+        
+        existing_product_names: Optional[Set[str]] = None
 
-        # For jobs, we must transform the line items into the correct structure.
-        # This includes checking if the product already exists in Jobber's main list.
-        existing_products = jobber_client.get_all_products_and_services()
-        existing_product_names = {p['name'] for p in existing_products}
+        for desired_item in all_desired_line_items:
+            existing_item = existing_items_map.get(desired_item['name'])
+            if existing_item:
+                # FIXED: Safely get the ID and check it before using.
+                existing_id = existing_item.get('id')
+                if existing_id and existing_item.get('quantity') != desired_item.get('quantity'):
+                    items_to_update.append({"lineItemId": existing_id, "quantity": desired_item['quantity']})
+            else:
+                if existing_product_names is None:
+                    existing_products = jobber_client.get_all_products_and_services()
+                    existing_product_names = {p['name'] for p in existing_products}
 
-        transformed_job_items: List[JobCreateLineItemGQL] = []
-        for item in all_desired_line_items:
-            # The name is the key Jobber uses to match to an existing product.
-            product_exists = item['name'] in existing_product_names
+                # FIXED: Assert that the variable is not None to satisfy the linter.
+                assert existing_product_names is not None
+                product_exists = desired_item['name'] in existing_product_names
+                cost_for_jobber = desired_item.get('unitCost') or 0.0
 
-            job_line_item: JobCreateLineItemGQL = {
-                "name": item['name'],
-                "quantity": item['quantity'],
-                "unitPrice": 0,
-                "category": "PRODUCT",
-                "description": item.get('description'),
-                "unitCost": item.get('unitCost') or 0.0,
-                "taxable": item.get('taxable', False),
-                # If product name exists, don't save a new one. Otherwise, do.
-                "saveToProductsAndServices": not product_exists,
-                "quoteLineItemId": None
-            }
-            transformed_job_items.append(job_line_item)
-        items_to_process = transformed_job_items
+                job_line_item: JobCreateLineItemGQL = {
+                    "name": desired_item['name'],
+                    "quantity": desired_item['quantity'],
+                    "unitPrice": 0.0,
+                    "category": "PRODUCT",
+                    "description": desired_item.get('description'),
+                    "unitCost": cost_for_jobber,
+                    "taxable": desired_item.get('taxable', False),
+                    "saveToProductsAndServices": not product_exists,
+                    "quoteLineItemId": None
+                }
+                items_to_add.append(job_line_item)
     else:
         return jsonify({"error": f"Unsupported itemType: {item_type}"}), 400
 
-    # --- Step 3: Compare desired vs. existing to build add/update lists ---
-    for desired_item in items_to_process:
-        desired_name = desired_item['name']
-        existing_item = existing_items_map.get(desired_name)
-
-        if existing_item:
-            # Item exists, check if quantity needs updating.
-            existing_item_id = existing_item.get('id')
-            if existing_item_id and existing_item.get('quantity') != desired_item.get('quantity'):
-                # The structure for updating quantity is the same for both Jobs and Quotes
-                items_to_update.append({
-                    "lineItemId": existing_item_id,
-                    "quantity": desired_item['quantity']
-                })
-        else:
-            # Item is new and needs to be added.
-            items_to_add.append(desired_item)
-
-    # --- Step 4: Execute API Calls based on type ---
+    # --- Step 3: Execute API Calls ---
     update_success, add_success = True, True
     update_message, add_message = "No items to update.", "No items to add."
 
     try:
         if item_type == 'Quote':
             if items_to_update:
-                quote_updates = cast(List[QuoteEditLineItemInputGQL], items_to_update)
-                update_success, update_message = jobber_client.update_line_items_on_quote(item_id, quote_updates)
+                update_success, update_message = jobber_client.update_line_items_on_quote(item_id, cast(List[QuoteEditLineItemInputGQL], items_to_update))
             if items_to_add:
-                quote_additions = cast(List[QuoteLineEditItemGQL], items_to_add)
-                add_success, add_message = jobber_client.add_line_items_to_quote(item_id, quote_additions)
+                add_success, add_message = jobber_client.add_line_items_to_quote(item_id, cast(List[QuoteLineEditItemGQL], items_to_add))
         elif item_type == 'Job':
             if items_to_update:
-                job_updates = cast(List[JobEditLineItemGQL], items_to_update) #type:ignore
-                update_success, update_message = jobber_client.update_line_items_on_job(item_id, job_updates)
+                update_success, update_message = jobber_client.update_line_items_on_job(item_id, cast(List[JobEditLineItemGQL], items_to_update)) #type:ignore
             if items_to_add:
-                job_additions = cast(List[JobCreateLineItemGQL], items_to_add) #type:ignore
-                add_success, add_message = jobber_client.add_line_items_to_job(item_id, job_additions)
+                add_success, add_message = jobber_client.add_line_items_to_job(item_id, cast(List[JobCreateLineItemGQL], items_to_add)) #type:ignore
 
     except (ConnectionRefusedError, requests.exceptions.RequestException, RuntimeError) as e:
         return jsonify({"error": f"A server or network error occurred: {e}"}), 500
 
-
-    # --- Step 5: Report Combined Results ---
+    # --- Step 4: Report Combined Results ---
     error_messages: list[str] = []
     if not update_success:
         error_messages.append(f"Update failed: {update_message}")
