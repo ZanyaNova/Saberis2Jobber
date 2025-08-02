@@ -434,6 +434,8 @@ def jobber_callback_route():
     """
     code = request.args.get('code')
     received_state = request.args.get('state')
+    # DEBUG
+    print("DEBUG: Entered /jobber/callback route.")
 
     # Verify the state parameter to prevent CSRF.
     # The verify_state_parameter function is now in jobber_auth_flow.

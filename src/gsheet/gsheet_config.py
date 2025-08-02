@@ -16,6 +16,11 @@ load_dotenv()
 # --- Google Sheets API Authentication ---
 try:
     creds_base64_str = os.environ.get('GOOGLE_CREDENTIALS_BASE64')
+    print("--- STARTING AUTH DEBUG ---")
+    print(f"DEBUG: Value of GOOGLE_CREDENTIALS_BASE64 is None? {creds_base64_str is None}")
+    print(f"DEBUG: Value of GOOGLE_CREDENTIALS_BASE64 is empty string? {creds_base64_str == ''}")
+    print(f"DEBUG: First 10 chars of value: {str(creds_base64_str)[:10] if creds_base64_str else 'N/A'}")
+    print("--- FINISHED AUTH DEBUG ---")
     if creds_base64_str:
         print("INFO: Authenticating with Google Sheets using Base64 credentials from environment variable.")
         creds_json_str = base64.b64decode(creds_base64_str).decode('utf-8')
