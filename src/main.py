@@ -12,7 +12,7 @@ from .jobber_client_module import (
     QuoteEditLineItemInputGQL, JobCreateLineItemGQL, JobEditLineItemGQL,
     JobLineItemNodeGQL
 )
-from .jobber_models import get_line_items_from_export, SaberisOrder, QuoteLineItemGQL
+from .jobber_models import SaberisOrder, QuoteLineItemGQL
 from typing import Dict, Any, TypedDict, List, Union, Tuple, Optional, cast, Set
 
 # Flask App Initialization
@@ -189,8 +189,9 @@ def prune_saberis_exports_route():
 @app.route('/api/send-to-jobber', methods=['POST'])
 def send_to_jobber():
     """
-    API endpoint to add/update items on a Jobber Quote or Job from Saberis exports.
-    This version is refactored for improved clarity and performance.
+    API endpoint to add/update items on a Jobber Quote or Job.
+    This endpoint now expects a fully-formed list of line items
+    from the frontend, including the final calculated unitCost (COGS).
     """
     if get_valid_access_token() is None:
         return jsonify({"error": "Not authorized with Jobber"}), 401
@@ -198,40 +199,29 @@ def send_to_jobber():
     data = request.get_json()
     item_id = data.get('itemId')
     item_type = data.get('itemType')
-    exports_payload = data.get('exports')
+    # This is the new, detailed payload from the frontend
+    desired_line_items = data.get('lineItems')
 
-    if not item_id or not item_type or not exports_payload:
-        return jsonify({"error": "Missing itemId, itemType, or exports data"}), 400
+    if not item_id or not item_type or not desired_line_items:
+        return jsonify({"error": "Missing itemId, itemType, or lineItems data"}), 400
 
     jobber_client = JobberClient()
-    saberis_export_records = ingest_saberis_exports()
-    manifest = {item['saberis_id']: item for item in saberis_export_records}
 
-    # --- Step 1: Generate and aggregate all desired line items ---
-    all_desired_line_items_raw: List[QuoteLineEditItemGQL] = []
-    for export_data in exports_payload:
-        saberis_id, quantity = export_data.get('saberis_id'), export_data.get('quantity')
-        if saberis_id and quantity and saberis_id in manifest:
-            # FIX: Get the raw_data from the manifest, not the stored_path
-            raw_saberis_data = manifest[saberis_id]['raw_data']
-            # FIX: Pass the raw data object directly to the function
-            line_items = get_line_items_from_export(raw_saberis_data, quantity)
-            all_desired_line_items_raw.extend(line_items)
-
-    aggregated_items: Dict[str, QuoteLineEditItemGQL] = {}
-    for item in all_desired_line_items_raw:
+    # --- The transformation logic is now GONE from the backend ---
+    # The 'desired_line_items' variable already contains everything we need.
+    
+    # The aggregation logic, however, is still useful to combine duplicate items.
+    aggregated_items: Dict[str, Dict[str, Any]] = {}
+    for item in desired_line_items:
         item_name = item["name"]
         if item_name in aggregated_items:
             aggregated_items[item_name]["quantity"] += item["quantity"]
         else:
             aggregated_items[item_name] = item
-    
-    all_desired_line_items = list(aggregated_items.values())
-    
-    if not all_desired_line_items:
-        return jsonify({"error": "No valid line items could be generated from the selected exports."}), 400
 
-    # --- Step 2: Determine items to add/update and transform if necessary ---
+    all_desired_line_items = list(aggregated_items.values())
+
+    # --- Step 2: Determine items to add/update (this logic remains the same) ---
     items_to_add: Union[List[QuoteLineEditItemGQL], List[JobCreateLineItemGQL]] = []
     items_to_update: Union[List[QuoteEditLineItemInputGQL], List[JobEditLineItemGQL]] = []
     existing_items_map: Dict[str, Union[QuoteLineItemGQL, JobLineItemNodeGQL]] = {}
@@ -249,8 +239,8 @@ def send_to_jobber():
                 if existing_id and existing_item.get('quantity') != desired_item.get('quantity'):
                     items_to_update.append({"lineItemId": existing_id, "quantity": desired_item['quantity']})
             else:
-                new_quote_item = desired_item.copy()
-                new_quote_item['category'] = 'PRODUCT'
+                # The frontend payload already matches the expected GQL type.
+                new_quote_item = cast(QuoteLineEditItemGQL, desired_item)
                 items_to_add.append(new_quote_item)
 
     elif item_type == 'Job':
@@ -264,7 +254,6 @@ def send_to_jobber():
         for desired_item in all_desired_line_items:
             existing_item = existing_items_map.get(desired_item['name'])
             if existing_item:
-                # FIXED: Safely get the ID and check it before using.
                 existing_id = existing_item.get('id')
                 if existing_id and existing_item.get('quantity') != desired_item.get('quantity'):
                     items_to_update.append({"lineItemId": existing_id, "quantity": desired_item['quantity']})
@@ -272,23 +261,14 @@ def send_to_jobber():
                 if existing_product_names is None:
                     existing_products = jobber_client.get_all_products_and_services()
                     existing_product_names = {p['name'] for p in existing_products}
-
-                # FIXED: Assert that the variable is not None to satisfy the linter.
+                
                 assert existing_product_names is not None
                 product_exists = desired_item['name'] in existing_product_names
-                cost_for_jobber = desired_item.get('unitCost') or 0.0
-
-                job_line_item: JobCreateLineItemGQL = {
-                    "name": desired_item['name'],
-                    "quantity": desired_item['quantity'],
-                    "unitPrice": 0.0,
-                    "category": "PRODUCT",
-                    "description": desired_item.get('description'),
-                    "unitCost": cost_for_jobber,
-                    "taxable": desired_item.get('taxable', False),
-                    "saveToProductsAndServices": not product_exists,
-                    "quoteLineItemId": None
-                }
+                
+                # The payload from the frontend already aligns with JobCreateLineItemGQL
+                job_line_item = cast(JobCreateLineItemGQL, desired_item)
+                job_line_item['saveToProductsAndServices'] = not product_exists
+                job_line_item['unitPrice'] = 0.0 # Price is explicitly zero
                 items_to_add.append(job_line_item)
     else:
         return jsonify({"error": f"Unsupported itemType: {item_type}"}), 400
@@ -324,6 +304,7 @@ def send_to_jobber():
 
     success_message = f"Successfully processed items for {item_type} ID {item_id}. Added: {len(items_to_add)}, Updated: {len(items_to_update)}."
     return jsonify({"message": success_message})
+
 
 @app.route('/api/catalog-item/<string:catalog_id>', methods=['GET'])
 def get_catalog_item(catalog_id: str) -> Union[Response, Tuple[Response, int]]:

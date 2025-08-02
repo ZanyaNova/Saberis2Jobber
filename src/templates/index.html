@@ -75,7 +75,7 @@
                         <div></div>
                         <h3 class="column-title">
                             Pricing
-                            <span style="float: right; font-size: 0.8em; font-weight: normal; min-width: 60px; text-align: right; display: inline-block;">
+                            <span style="font-size: 0.8em; font-weight: normal; min-width: 60px; text-align: right; display: inline-block;">
                                 <button x-show="saveState === 'dirty'" @click="savePricingFactors()" style="padding: 5px 10px; font-size: 1em; font-weight: bold; margin: 0;">Save</button>
                                 <span x-show="saveState === 'saving'" aria-busy="true" style="font-size: smaller;">Saving...</span>
                                 <span x-show="saveState === 'saved'" style="color: green; font-size: smaller;">Saved!</span>
@@ -335,7 +335,9 @@
     }
 </style>
 
-<script>
+<script type="module">
+    import { buildLineItemsPayload } from "{{ url_for('static', filename='dist/saberis_transformer.js') }}";
+
     function saberisDashboard() {
         return {
             // State
@@ -627,11 +629,36 @@
                     return;
                 }
                 this.isSending = true;
+
+                const selectedRawExports = this.saberisExports.filter(exp =>
+                    this.selectedExportIds.includes(exp.saberis_id)
+                );
+
+                // Create a map of Catalog -> Multiplier from the UI's pricing data.
+                const multipliersMap = {};
+                for (const catalog of this.uniqueCatalogs) {
+                    multipliersMap[catalog] = this.catalogPricingData[catalog]?.multiplier || 1.0;
+                }
+
+                let allLineItems = [];
+                for (const rawExport of selectedRawExports) {
+                    const uiQuantity = this.quantities[rawExport.saberis_id];
+                    
+                    // Call the transformer with the multipliers map, not the incorrect cogsMap.
+                    const lineItems = buildLineItemsPayload(
+                        rawExport.raw_data,
+                        uiQuantity,
+                        multipliersMap
+                    );
+                    allLineItems.push(...lineItems);
+                }
+
                 const payload = {
                     itemId: this.selectedItemId,
-                    itemType: selectedItem.type,
-                    exports: this.selectedExportIds.map(id => ({ saberis_id: id, quantity: this.quantities[id] }))
+                    itemType: this.jobberItems.find(item => item.id === this.selectedItemId).type,
+                    lineItems: allLineItems
                 };
+
                 try {
                     const response = await fetch('/api/send-to-jobber', {
                         method: 'POST',
@@ -639,10 +666,13 @@
                         body: JSON.stringify(payload),
                     });
                     const result = await response.json();
-                    if (!response.ok) throw new Error(result.error || `HTTP error! status: ${response.status}`);
+                    if (!response.ok) {
+                        throw new Error(result.error || `HTTP error! status: ${response.status}`);
+                    }
                     alert(result.message || 'Successfully sent items to Jobber!');
                     this.selectedExportIds = [];
                     this.quantities = {};
+                    this.updateCatalogsAndCosts(); // Recalculate totals
                 } catch (error) {
                     console.error("Error sending to Jobber:", error);
                     alert(`An error occurred: ${error.message}`);
@@ -650,6 +680,7 @@
                     this.isSending = false;
                 }
             },
+
             async pruneExports() {
                 if (!confirm('Delete all saberis exports except the 3 most recent?')) return;
                 this.isLoading = true;
@@ -668,5 +699,8 @@
             },
         };
     }
+    document.addEventListener('alpine:init', () => {
+        Alpine.data('saberisDashboard', saberisDashboard);
+    });
 </script>
 {% endblock %}
