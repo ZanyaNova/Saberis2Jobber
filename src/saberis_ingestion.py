@@ -3,7 +3,8 @@ import uuid
 import gzip
 import base64
 from datetime import datetime
-from typing import Any, List, Set, TypedDict
+from typing import Any, List, Set, TypedDict, cast
+from gspread.utils import ValueInputOption
 
 from .saberis_api_client import SaberisAPIClient
 from .gsheet.gsheet_config import GSHEET_SABERIS_EXPORTS
@@ -35,17 +36,30 @@ def _decompress(blob: str) -> Any:
 # Manifest record type
 # ---------------------------------------------------------------------------
 
-class SaberisExportRecord(TypedDict):
-    saberis_id: str
-    original_filename: str  # Saberis document GUID
-    stored_path: str        # Kept for compatibility, now always ""
-    ingested_at: str
-    export_date: str
+class SaberisDataBlob(TypedDict):
     customer_name: str
     username: str
+    export_date: str
     shipping_address: str
     sent_to_jobber: bool
-    raw_data: Any
+    raw_data_gz64: str
+    stored_path: str
+
+
+class SaberisExportRecord(TypedDict):
+    saberis_id: str
+    original_filename: str
+    ingested_at: str
+    # Nested data from the JSON blob
+    customer_name: str
+    username: str
+    export_date: str
+    shipping_address: str
+    sent_to_jobber: bool
+    raw_data: Any # This will hold the decompressed, raw JSON
+    raw_data_gz64: str # Keep the compressed version
+    stored_path: str
+
 
 # ---------------------------------------------------------------------------
 # Ingestion logic
@@ -63,25 +77,40 @@ def ingest_saberis_exports() -> List[SaberisExportRecord]:
     # --- 1. Read existing sheet rows ---------------------------------------------------
     for record in sheet_records:
         try:
-            raw_json = record.get("data", "{}")
-            data_dict = json.loads(raw_json)
+            # FIX: Ensure the value is a string before parsing
+            raw_json_from_sheet = record.get("data", "{}")
+            if not isinstance(raw_json_from_sheet, str):
+                raw_json_from_sheet = json.dumps(raw_json_from_sheet)
+
+            data_dict = cast(SaberisDataBlob, json.loads(raw_json_from_sheet))
 
             # ⟲ Inflate compressed payloads on‑the‑fly
-            if "raw_data_gz64" in data_dict and "raw_data" not in data_dict:
+            raw_data = {}
+            if "raw_data_gz64" in data_dict:
                 try:
-                    data_dict["raw_data"] = _decompress(data_dict.pop("raw_data_gz64"))
-                except Exception as e:  # pragma: no cover – safety net
+                    raw_data = _decompress(data_dict["raw_data_gz64"])
+                except Exception as e:
                     print(f"WARN: Failed to decompress Saberis doc {record.get('saberis_id')}: {e}")
                     continue
 
+            # FIX: Construct the record with explicit casting for each field
             full_record: SaberisExportRecord = {
-                "saberis_id": record.get("saberis_id"),
-                "original_filename": record.get("original_filename"),
-                "ingested_at": record.get("ingested_at"),
-                **data_dict,
+                "saberis_id": str(record.get("saberis_id", "")),
+                "original_filename": str(record.get("original_filename", "")),
+                "ingested_at": str(record.get("ingested_at", "")),
+                "customer_name": data_dict.get("customer_name", "N/A"),
+                "username": data_dict.get("username", "N/A"),
+                "export_date": data_dict.get("export_date", "N/A"),
+                "shipping_address": data_dict.get("shipping_address", ""),
+                "sent_to_jobber": data_dict.get("sent_to_jobber", False),
+                "raw_data_gz64": data_dict.get("raw_data_gz64", ""),
+                "stored_path": data_dict.get("stored_path", ""),
+                "raw_data": raw_data,
             }
             manifest.append(full_record)
-            processed_guids.add(record.get("original_filename"))
+            # FIX: Ensure the guid is a string before adding to the set
+            processed_guids.add(str(record.get("original_filename")))
+
         except (json.JSONDecodeError, TypeError) as e:
             print(f"WARN: Malformed JSON in row for saberis_id={record.get('saberis_id')}: {e}")
             continue
@@ -105,7 +134,8 @@ def ingest_saberis_exports() -> List[SaberisExportRecord]:
 
         order_node = doc_json.get("SaberisOrderDocument", {}).get("Order", {})
 
-        data_blob = {
+        # FIX: Define the type of data_blob explicitly
+        data_blob: SaberisDataBlob = {
             "customer_name": order_node.get("Customer", {}).get("Name", "N/A"),
             "username": order_node.get("Username", "N/A"),
             "export_date": order_node.get("Date", "N/A"),
@@ -119,30 +149,29 @@ def ingest_saberis_exports() -> List[SaberisExportRecord]:
             "stored_path": "",
         }
 
-        new_row = [
-            str(uuid.uuid4()),           # saberis_id
-            guid,                        # original_filename (doc GUID)
-            datetime.now().isoformat(),  # ingested_at
-            json.dumps(data_blob, separators=(",", ":")),  # compact JSON for the data column
+        # FIX: Define the type of new_row explicitly
+        new_row: List[Any] = [
+            str(uuid.uuid4()),
+            guid,
+            datetime.now().isoformat(),
+            json.dumps(data_blob, separators=(",", ":")),
         ]
         new_rows.append(new_row)
         processed_guids.add(guid)
 
+
     # --- 3. Append & deduplicate -------------------------------------------------------
     if new_rows:
-        GSHEET_SABERIS_EXPORTS.append_rows(new_rows, value_input_option="RAW")
+        GSHEET_SABERIS_EXPORTS.append_rows(new_rows, value_input_option=ValueInputOption.raw)
         print(f"INFO: Appended {len(new_rows)} new rows to the Google Sheet.")
 
-        # Lightweight duplicate guard: keep the first occurrence of each GUID.
         for _, guid, *_ in new_rows:
-            dup_cells = GSHEET_SABERIS_EXPORTS.findall(guid) or []  # search entire sheet
+            dup_cells = GSHEET_SABERIS_EXPORTS.findall(guid) or [] #type:ignore
             if len(dup_cells) > 1:
-                # Keep the earliest row (lowest row number)
                 for cell in sorted(dup_cells[1:], key=lambda c: c.row, reverse=True):
                     GSHEET_SABERIS_EXPORTS.delete_rows(cell.row)
                 print(f"INFO: Removed {len(dup_cells) - 1} duplicate row(s) for {guid}.")
 
-        # Recurse once to include freshly added rows in manifest (safe at our volumes).
         return ingest_saberis_exports()
 
     # --- 4. Return manifest sorted by newest first -------------------------------------
@@ -162,12 +191,10 @@ def prune_saberis_exports(keep_count: int = 3) -> int:
         print("INFO: Nothing to prune – sheet already small.")
         return 0
 
-    # Newest first
-    records.sort(key=lambda r: r.get("ingested_at", ""), reverse=True)
+    records.sort(key=lambda r: str(r.get("ingested_at", "")), reverse=True)
 
-    # Calculate sheet row indices (header row = 1, data starts at 2)
-    rows_to_delete = range(keep_count + 2, len(records) + 2)  # inclusive of header offset
-    for row_idx in reversed(rows_to_delete):  # delete bottom‑up to preserve indices
+    rows_to_delete = range(keep_count + 2, len(records) + 2)
+    for row_idx in reversed(rows_to_delete):
         GSHEET_SABERIS_EXPORTS.delete_rows(row_idx)
 
     deleted = len(rows_to_delete)
