@@ -187,7 +187,6 @@ def prune_saberis_exports_route():
     
 
 @app.route('/api/send-to-jobber', methods=['POST'])
-@app.route('/api/send-to-jobber', methods=['POST'])
 def send_to_jobber():
     """
     API endpoint to add/update items on a Jobber Quote or Job from Saberis exports.
@@ -213,8 +212,10 @@ def send_to_jobber():
     for export_data in exports_payload:
         saberis_id, quantity = export_data.get('saberis_id'), export_data.get('quantity')
         if saberis_id and quantity and saberis_id in manifest:
-            stored_path = manifest[saberis_id]['stored_path']
-            line_items = get_line_items_from_export(stored_path, quantity)
+            # FIX: Get the raw_data from the manifest, not the stored_path
+            raw_saberis_data = manifest[saberis_id]['raw_data']
+            # FIX: Pass the raw data object directly to the function
+            line_items = get_line_items_from_export(raw_saberis_data, quantity)
             all_desired_line_items_raw.extend(line_items)
 
     aggregated_items: Dict[str, QuoteLineEditItemGQL] = {}

@@ -438,19 +438,13 @@ class QuoteCreateInput:
 # ---------------------------------------------------------------------------
 # Transformation Logic
 # ---------------------------------------------------------------------------
-
-def get_line_items_from_export(stored_path: str, ui_quantity: int) -> List[QuoteLineEditItemGQL]:
+def get_line_items_from_export(saberis_data: SaberisDocumentDict, ui_quantity: int) -> List[QuoteLineEditItemGQL]:
     """
-    Reads a stored Saberis export, transforms its line items, and returns them
-    in the format expected by the Jobber API for adding to an existing quote.
+    Transforms Saberis data into Jobber line items.
+    Now accepts the raw Saberis JSON data directly.
     """
-    try:
-        with open(stored_path, 'r') as f:
-            saberis_data = json.load(f)
-    except (IOError, json.JSONDecodeError) as e:
-        print(f"Error processing export file {stored_path}: {e}")
-        return []
-
+    # The file opening logic is now removed.
+    # The function now works directly with the saberis_data object.
     saberis_order = SaberisOrder.from_json(saberis_data)
     jobber_lines: List[QuoteLineEditItemGQL] = []
 
@@ -458,7 +452,7 @@ def get_line_items_from_export(stored_path: str, ui_quantity: int) -> List[Quote
         if li.type != "Product":
             continue
 
-        # Construct the Jobber line item name and full description string
+        # The rest of the transformation logic remains exactly the same...
         base_name_parts = [
             li.brand,
             remove_curly_braces_and_content(li.description)
@@ -467,10 +461,8 @@ def get_line_items_from_export(stored_path: str, ui_quantity: int) -> List[Quote
         for key, value in li.attributes.items():
             if key.strip().lower() == "pricelevel":
                 continue
-
             if key == "Species / Finish":
                 description_parts.append(f"Finish / Species: {value}")
-
             description_parts.append(f"{key}: {value}")
             if key in FIELDs_TO_PUT_IN_TITLE:
                 base_name_parts.append(value)
@@ -478,16 +470,12 @@ def get_line_items_from_export(stored_path: str, ui_quantity: int) -> List[Quote
         base_product_name = " | ".join(filter(None, base_name_parts))
         jobber_description = "\n".join(description_parts)
 
-        # 2. Create a unique signature and generate a short hash
-        # The signature includes the base name and all descriptive attributes
         signature_str = f"{base_product_name}{jobber_description}"
         hash_object = hashlib.md5(signature_str.encode('utf-8'))
         short_hash = hash_object.hexdigest()[:6]
 
-        # 3. Combine them into the final name
         final_product_name = f"{base_product_name} | S2J({short_hash})"
 
-        # 4. Create the final GQL object
         line_item: QuoteLineEditItemGQL = {
             "name": final_product_name,
             "quantity": li.quantity * ui_quantity,
