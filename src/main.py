@@ -449,6 +449,10 @@ def jobber_callback_route():
         return redirect(url_for('home', message="Authorization failed: User denied access or no code received."))
 
     print(f"Received authorization code from Jobber: {code[:20]}...") 
+    #DEBUG:
+    success = exchange_code_for_token(code)
+    print(f"DEBUG: exchange_code_for_token returned: {success}")
+
     if exchange_code_for_token(code):
         print("Authorization successful. Tokens stored.")
         return redirect(url_for('home', message="Authorization successful!"))

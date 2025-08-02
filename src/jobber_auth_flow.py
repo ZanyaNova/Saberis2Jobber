@@ -55,6 +55,11 @@ def exchange_code_for_token(code: str) -> bool:
     }
     try:
         response = requests.post(JOBBER_TOKEN_URL, data=token_payload, timeout=30)
+        # ---vvv- DEBUGGING: ADD THESE LINES -vvv---
+        print(f"DEBUG: Jobber token exchange response status: {response.status_code}")
+        print(f"DEBUG: Jobber token exchange response text: {response.text}")
+        # ---^^^- END OF ADDED LINES -^^^---
+        
         response.raise_for_status()
         token_data = response.json()
 
