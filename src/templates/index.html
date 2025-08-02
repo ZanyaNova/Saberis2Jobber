@@ -335,10 +335,109 @@
     }
 </style>
 
-<script type="module">
-    import { buildLineItemsPayload } from "{{ url_for('static', filename='dist/saberis_transformer.js') }}";
-
+<script>
     function saberisDashboard() {
+        // --- Begin Transformer Logic (from saberis_transformer.ts) ---
+
+        /**
+         * Hashes a string using a simple algorithm to create a short, repeatable signature.
+         * Note: This is NOT for cryptographic use.
+         * @param {string} str The string to hash.
+         * @returns {string} A short hexadecimal string signature.
+         */
+        function simpleHash(str) {
+            let hash = 0;
+            for (let i = 0; i < str.length; i++) {
+                const char = str.charCodeAt(i);
+                hash = (hash << 5) - hash + char;
+                hash |= 0; // Convert to 32bit integer
+            }
+            // Convert to a positive hex string and take the first 6 characters
+            return ('000000' + (hash >>> 0).toString(16)).slice(-6);
+        }
+
+        /**
+         * Removes content within curly braces from a string.
+         * @param {string} text The text to process.
+         * @returns {string} Text with curly braces and their content removed.
+         */
+        function removeCurlyBraces(text) {
+            return text.replace(/\{.*?\}/g, "");
+        }
+
+        /**
+         * Builds the final array of Jobber line items from raw Saberis data.
+         * @param {object} saberisData The raw JSON object from a Saberis export.
+         * @param {number} uiQuantity The quantity multiplier from the UI.
+         * @param {object} catalogMultipliers A dictionary mapping catalog IDs to their pricing multiplier.
+         * @returns {Array<object>} An array of fully-formed Jobber line item objects.
+         */
+        function buildLineItemsPayload(saberisData, uiQuantity, catalogMultipliers) {
+            const finalLineItems = [];
+            const items = saberisData?.SaberisOrderDocument?.Order?.Group?.Item;
+
+            if (!items) {
+                return [];
+            }
+
+            let currentCatalog = "Unknown Catalog";
+            let currentBrand = "Unknown Brand";
+            const currentAttributes = {};
+
+            for (const item of items) {
+                const itemType = item.Type?.toLowerCase();
+                const description = item.Description || "";
+
+                if (itemType === 'text' && description.includes('=')) {
+                    const [key, value] = description.split('=', 2).map(s => s.trim());
+                    if (key === "Catalog") {
+                        currentCatalog = value;
+                    }
+                    currentAttributes[key] = value;
+                } else if (itemType === 'product') {
+                    const baseNameParts = [
+                        currentBrand,
+                        removeCurlyBraces(description)
+                    ];
+
+                    const descriptionParts = [];
+                    for (const [key, value] of Object.entries(currentAttributes)) {
+                        if (key.toLowerCase() === 'pricelevel' || key === 'Catalog' || key === 'Brand') {
+                            continue;
+                        }
+                        descriptionParts.push(`${key}: ${value}`);
+                        if (["Door Selection", "Cabinet Style"].includes(key)) {
+                            baseNameParts.push(value);
+                        }
+                    }
+
+                    const baseProductName = baseNameParts.filter(Boolean).join(" | ");
+                    const jobberDescription = descriptionParts.join("\n");
+                    const signature = simpleHash(`${baseProductName}${jobberDescription}`);
+                    const finalProductName = `${baseProductName} | S2J(${signature})`;
+                    
+                    const itemCost = parseFloat(String(item.Cost || 0));
+                    const multiplier = catalogMultipliers[currentCatalog] || 1.0;
+                    const unitCost = itemCost * multiplier;
+                    const quantity = parseFloat(String(item.Quantity || 1));
+
+                    finalLineItems.push({
+                        name: finalProductName,
+                        quantity: quantity * uiQuantity,
+                        description: jobberDescription,
+                        unitCost: unitCost,
+                        taxable: false,
+                        category: "PRODUCT",
+                        saveToProductsAndServices: true,
+                    });
+                }
+            }
+            return finalLineItems;
+        }
+
+        // --- End Transformer Logic ---
+
+
         return {
             // State
             isLoading: false,
@@ -634,7 +733,6 @@
                     this.selectedExportIds.includes(exp.saberis_id)
                 );
 
-                // Create a map of Catalog -> Multiplier from the UI's pricing data.
                 const multipliersMap = {};
                 for (const catalog of this.uniqueCatalogs) {
                     multipliersMap[catalog] = this.catalogPricingData[catalog]?.multiplier || 1.0;
@@ -644,7 +742,7 @@
                 for (const rawExport of selectedRawExports) {
                     const uiQuantity = this.quantities[rawExport.saberis_id];
                     
-                    // Call the transformer with the multipliers map, not the incorrect cogsMap.
+                    // This now calls the function defined within this same scope.
                     const lineItems = buildLineItemsPayload(
                         rawExport.raw_data,
                         uiQuantity,
