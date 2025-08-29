@@ -372,6 +372,13 @@
          * @param {object} catalogMultipliers A dictionary mapping catalog IDs to their pricing multiplier.
          * @returns {Array<object>} An array of fully-formed Jobber line item objects.
          */
+        
+        function isUnknownBrand(brand) {
+            if (!brand) return true;
+            const b = String(brand).trim().toLowerCase();
+            return b === 'unknown brand' || b === 'undefined' || b === 'none' || b === 'n/a';
+        }
+
         function buildLineItemsPayload(saberisData, uiQuantity, catalogMultipliers) {
             const finalLineItems = [];
             const items = saberisData?.SaberisOrderDocument?.Order?.Group?.Item;
@@ -392,14 +399,23 @@
                     const [key, value] = description.split('=', 2).map(s => s.trim());
                     if (key === "Catalog") {
                         currentCatalog = value;
+                    } else if (key === "Brand") {
+                        currentBrand = value;
                     }
                     currentAttributes[key] = value;
                 } else if (itemType === 'product') {
-                    const baseNameParts = [
-                        currentBrand,
-                        removeCurlyBraces(description)
-                    ];
+                    //Make Name String
+                    const baseNameParts = [];
 
+                    // Brand first if it’s known
+                    if (!isUnknownBrand(currentBrand)) {
+                        baseNameParts.push(currentBrand);
+                    }
+
+                    baseNameParts.push(currentCatalog);
+                    baseNameParts.push(removeCurlyBraces(description));
+
+                    // Make Description String
                     const descriptionParts = [];
                     for (const [key, value] of Object.entries(currentAttributes)) {
                         if (key.toLowerCase() === 'pricelevel' || key === 'Catalog' || key === 'Brand') {

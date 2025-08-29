@@ -244,26 +244,25 @@ class SaberisLineItem:
 
     @staticmethod
     def from_json(obj: SaberisLineItemDict, context: Dict[str, str]) -> SaberisLineItem:
-        """
-        Create a SaberisLineItem from a raw dictionary, enriching it with
-        context (catalog, style, etc.) gathered during the main parsing loop.
-        
-        This method should only be called for "Product" type items.
-        """
         def safe_float(value: Any) -> float:
-            if value is None or value == "": return 0.0
-            try: return float(value)
-            except (ValueError, TypeError): return 0.0
+            if value is None or value == "": 
+                return 0.0
+            try:
+                return float(value)
+            except (ValueError, TypeError):
+                return 0.0
 
-        context_copy = context.copy()
-        catalog = context_copy.pop("Catalog", "Unknown Catalog")
+        # Keep all context keys (including "Catalog") in attributes
+        attributes = context.copy()
 
-        # Create the base object with data from the line item itself
+        catalog = attributes.get("Catalog") or "Unknown Catalog"
+        brand   = attributes.get("Brand")   or "Unknown Brand"
+
         return SaberisLineItem(
             type="Product",
-            catalog = catalog,
-            brand = context_copy.pop("Brand", catalog),
-            attributes= context_copy,
+            catalog=catalog,
+            brand=brand,
+            attributes=attributes,
             line_id=int(obj.get("LineID") or -1),
             description=str(obj.get("Description") or ""),
             quantity=safe_float(obj.get("Quantity", 1.0)),
@@ -276,8 +275,10 @@ class SaberisLineItem:
             manufacturer_sku=str(obj.get("ManufacturerSKU") or "") or None,
             volume=int(obj.get("Volume") or 0) or 0,
             weight=str(obj.get("Weight") or "") or None,
-            product_type_saberis=str(obj.get("ProductType") or "") or None
+            product_type_saberis=str(obj.get("ProductType") or "") or None,
         )
+
+
 
 @dataclass
 class SaberisOrder:
@@ -358,8 +359,8 @@ class SaberisOrder:
                     key, value = description.split("=", 1)
                     key = key.strip()
                     value = value.strip()
-
                     if key == "Catalog":
+                        print("Catalog found: " + key)
                         context[key] = value
                         context["Brand"] = catalog_manager.get_brand(value)
                         cumulative_catalogs.add(value)
@@ -372,6 +373,8 @@ class SaberisOrder:
 
             # If it's a "Product" line, create an enriched item using the current context
             elif item_type == "product":
+                print("context at 'SaberisLineItem.from_json")
+                print(context)
                 processed_item = SaberisLineItem.from_json(raw_item_dict, context.copy())
                 cumulative_volume += processed_item.volume
                 
