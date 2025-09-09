@@ -84,13 +84,13 @@
                     </div>
                     <div class="scrollable-list" style="max-height: 85vh;">
                         <template x-for="catalog in paginatedUniqueCatalogs" :key="catalog">
-                            <article class="catalog-card" :class="{ 'is-ignored': ignoredCatalogs.includes(catalog) }">
+                            <article class="catalog-card" :class="{ 'is-ignored': !includedCatalogs.includes(catalog) }">
                                 <header>
                                     <strong x-text="catalogPricingData[catalog] ? catalogPricingData[catalog].brand : catalog"></strong>
-                                    <div class="ignore-toggle">
+                                    <div class="include-toggle">
                                         <label>
-                                            <span class="ignore-label">ignore:</span>
-                                            <input type="checkbox" :value="catalog" x-model="ignoredCatalogs">
+                                            <span class="include-label">include:</span>
+                                            <input type="checkbox" :value="catalog" x-model="includedCatalogs">
                                         </label>
                                     </div>
                                 </header>
@@ -143,6 +143,11 @@
                                     </header>
                                     <small x-text="item.shipping_address"></small><br>
                                     <small class="exported-by-label" x-text="item.type === 'Job' ? `Status: ${item.status}` : `Approved: ${item.status}`"></small>
+                                    <div x-show="selectedItemId === item.id" style="margin-top: 1rem;">
+                                        <button @click.stop="clearS2JEntries(item)" class="secondary outline" style="width: 100%;">
+                                            Clear S2J Entries
+                                        </button>
+                                    </div>
                                 </article>
                             </template>
                         </template>
@@ -294,13 +299,13 @@
     .is-ignored .cost-details {
         display: none;
     }
-    .ignore-toggle label {
+    .include-toggle label {
         display: flex;
         align-items: center;
         cursor: pointer;
         margin: 0;
     }
-    .ignore-label {
+    .include-label {
         color: var(--pico-muted-color);
         font-size: 0.9em;
         font-weight: normal;
@@ -475,7 +480,7 @@
             quantities: {},
             saberisSearchQuery: '',
             saberisCurrentPage: 1,
-            ignoredCatalogs: [],
+            includedCatalogs: [],
 
             // Quote Calculation
             uniqueCatalogs: [],
@@ -566,7 +571,7 @@
                 return false;
             },
             get activeCatalogs() {
-                return this.uniqueCatalogs.filter(c => !this.ignoredCatalogs.includes(c));
+                return this.includedCatalogs;
             },
             get totalMSRP() {
                 return this.activeCatalogs.reduce((total, catalog) => total + (this.catalogBaseCosts[catalog] || 0), 0);
@@ -639,7 +644,7 @@
                     this.saveState = 'dirty';
                 }
             },
-            async updateCatalogsAndCosts() {
+           async updateCatalogsAndCosts() {
                 if (this.isDirty() && (this.saveState === 'clean' || this.saveState === 'saved')) {
                     this.saveState = 'dirty';
                 }
@@ -660,6 +665,7 @@
                     }
                 }
                 this.uniqueCatalogs = Array.from(newUniqueCatalogs).sort();
+                this.includedCatalogs = [...this.uniqueCatalogs];
                 this.catalogBaseCosts = newBaseCosts;
                 const catalogsToFetch = this.uniqueCatalogs.filter(catalog => this.originalCatalogPricingData[catalog] === undefined);
                 if (catalogsToFetch.length > 0) {
@@ -809,6 +815,37 @@
                     alert(`An error occurred: ${error.message}`);
                 } finally {
                     this.isLoading = false;
+                }
+            },
+
+            async clearS2JEntries(item) {
+                if (!confirm(`Proceed with deleting every S2J entry on ${item.type} ${item.number}? This cannot be undone.`)) {
+                    return;
+                }
+
+                this.isSending = true; // Use the existing isSending flag to show activity
+
+                try {
+                    const response = await fetch('/api/clear-s2j-entries', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            itemId: item.id,
+                            itemType: item.type,
+                        }),
+                    });
+
+                    const result = await response.json();
+                    if (!response.ok) {
+                        throw new Error(result.error || `HTTP error! status: ${response.status}`);
+                    }
+                    alert(result.message || 'Successfully cleared S2J entries.');
+
+                } catch (error) {
+                    console.error("Error clearing S2J entries:", error);
+                    alert(`An error occurred: ${error.message}`);
+                } finally {
+                    this.isSending = false;
                 }
             },
         };

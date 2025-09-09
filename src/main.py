@@ -375,6 +375,35 @@ def save_catalog_items() -> Union[Response, Tuple[Response, int]]:
         "saved_items": saved_items
     })
 
+@app.route('/api/clear-s2j-entries', methods=['POST'])
+def clear_s2j_entries_route():
+    """
+    API endpoint to delete all line items with the 'S2J' signature
+    from a specific Jobber Quote or Job.
+    """
+    if get_valid_access_token() is None:
+        return jsonify({"error": "Not authorized with Jobber"}), 401
+
+    data = request.get_json()
+    item_id = data.get('itemId')
+    item_type = data.get('itemType')
+
+    if not item_id or not item_type:
+        return jsonify({"error": "Missing itemId or itemType data"}), 400
+
+    jobber_client = JobberClient()
+
+    try:
+        success, message = jobber_client.delete_s2j_line_items(item_id, item_type)
+        if success:
+            return jsonify({"message": message})
+        else:
+            return jsonify({"error": message}), 500
+            
+    except Exception as e:
+        print(f"ERROR: Could not clear S2J entries: {e}")
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/')
 def home():
     status_message = "Checking authorization status..."

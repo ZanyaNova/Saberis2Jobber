@@ -246,6 +246,24 @@ class QuoteEditLineItemsPayloadGQL(TypedDict):
     userErrors: Optional[List[UserError]]
 
 
+# For deleting
+# --- Structures for Deleting Line Items ---
+# --- Structures for Deleting Line Items ---
+class QuoteDeleteLineItemsInputGQL(TypedDict):
+    lineItemIds: List[str]
+
+class JobDeleteLineItemsInputGQL(TypedDict):
+    lineItemIds: List[str]
+
+class QuoteDeleteLineItemsVariablesGQL(TypedDict):
+    quoteId: str
+    input: QuoteDeleteLineItemsInputGQL
+
+class JobDeleteLineItemsVariablesGQL(TypedDict):
+    jobId: str
+    input: JobDeleteLineItemsInputGQL
+
+
 # ClientCreateResponseDataGQL (Optional - for typing the whole 'data' field for this specific mutation)
 # class ClientCreateResponseDataGQL(TypedDict): clientCreate: Optional[ClientCreateDataPayloadGQL]
 
@@ -313,7 +331,9 @@ GraphQLMutationVariables = Union[
     QuoteEditLineItemsVariablesGQL,   # For editing items on a quote
     JobCreateLineItemsVariablesGQL,   # For adding items to a job
     JobEditLineItemsVariablesGQL,     # For editing items on a job
-    Dict[str, Any]                    # Fallback for any other structure
+    QuoteDeleteLineItemsVariablesGQL, # <-- ADD
+    JobDeleteLineItemsVariablesGQL,   # <-- ADD
+    Dict[str, Any],              # Fallback for any other structure
 ]
 # General type for the 'data' field returned by _post after extracting from GraphQLResponseWrapper
 GraphQLData = Dict[str, Any]
@@ -1007,6 +1027,81 @@ class JobberClient:
             print(f"ERROR: Failed to fetch approved quotes from Jobber: {e}")
             raise
     
+    def delete_s2j_line_items(self, item_id: str, item_type: str) -> Tuple[bool, str]:
+        """
+        Deletes all line items containing the 'S2J' signature from a Job or Quote.
+        """
+        print(f"INFO: Clearing S2J entries from {item_type} ID: {item_id}")
+
+        # Step 1: Fetch all line items (This part is correct and remains the same)
+        if item_type == 'Quote':
+            item_details = self.get_quote_with_line_items(item_id)
+        elif item_type == 'Job':
+            item_details = self.get_job_with_line_items(item_id)
+        else:
+            return False, f"Unsupported itemType: {item_type}"
+
+        if not item_details:
+            return False, f"Could not fetch details for {item_type} ID: {item_id}"
+
+        # Step 2: Filter for S2J line items (This part is also correct)
+        line_items_to_delete = []
+        nodes = item_details.get("lineItems", {}).get("nodes", [])
+        for item in nodes:
+            if 'name' in item and ' | S2J(' in item['name']:
+                line_items_to_delete.append(item['id'])
+
+        if not line_items_to_delete:
+            return True, "No S2J entries found to clear."
+
+        print(f"INFO: Found {len(line_items_to_delete)} S2J line item(s) to delete.")
+
+        # Step 3: Execute the appropriate delete mutation (This is what we will change)
+        try:
+            if item_type == 'Quote':
+
+                mutation = """
+                mutation QuoteDeleteLineItems($quoteId: EncodedId!, $input: QuoteDeleteLineItemsInput!) {
+                quoteDeleteLineItems(quoteId: $quoteId, input: $input) {
+                    userErrors { message path }
+                }
+                }
+                """
+
+                variables: QuoteDeleteLineItemsVariablesGQL = {
+                    "quoteId": item_id,
+                    "input": {"lineItemIds": line_items_to_delete}
+                }
+                raw_data = self._post(mutation, variables)
+                result = raw_data.get("quoteDeleteLineItems", {})
+
+            elif item_type == 'Job':
+                # CORRECTED MUTATION
+                mutation = """
+                mutation JobDeleteLineItems($jobId: EncodedId!, $input: JobDeleteLineItemsInput!) {
+                jobDeleteLineItems(jobId: $jobId, input: $input) {
+                    userErrors { message path }
+                }
+                }
+                """
+                # CORRECTED VARIABLES
+                variables: JobDeleteLineItemsVariablesGQL = {
+                    "jobId": item_id,
+                    "input": {"lineItemIds": line_items_to_delete}
+                }
+                raw_data = self._post(mutation, variables)
+                result = raw_data.get("jobDeleteLineItems", {})
+
+            user_errors = result.get("userErrors")
+            if user_errors:
+                error_messages = [f"Path: {e.get('path', 'N/A')}, Message: {e.get('message', 'Unknown error')}" for e in user_errors]
+                return False, f"Failed to delete line items due to user errors: {'; '.join(error_messages)}"
+
+            return True, f"Successfully deleted {len(line_items_to_delete)} S2J line item(s)."
+
+        except (ConnectionRefusedError, requests.exceptions.RequestException, RuntimeError) as e:
+            return False, f"An error occurred while deleting line items: {e}"
+
     # UNUSED, but helpful if we ever decide to automate quote creation
     def create_quote(self, app_quote_payload: QuoteCreateInput) -> Tuple[Optional[str], str]:
         """Creates quote in Jobber. Returns (quote_id, status_message)."""

@@ -174,9 +174,9 @@
                                     <article class="catalog-card" :class="{ 'is-ignored': ignoredCatalogs.includes(catalog) }">
                                         <header>
                                             <strong x-text="catalogPricingData[catalog] ? catalogPricingData[catalog].brand : catalog"></strong>
-                                            <div class="ignore-toggle">
+                                            <div class="include-toggle">
                                                 <label>
-                                                    <span class="ignore-label">ignore:</span>
+                                                    <span class="include-label">ignore:</span>
                                                     <input type="checkbox" :value="catalog" x-model="ignoredCatalogs">
                                                 </label>
                                             </div>
@@ -342,14 +342,14 @@
         display: none;
     }
 
-    .ignore-toggle label {
+    .include-toggle label {
         display: flex;
         align-items: center;
         cursor: pointer;
         margin: 0; /* Override default label margins */
     }
 
-    .ignore-label {
+    .include-label {
         color: var(--pico-muted-color);
         font-size: 0.9em;
         font-weight: normal;
