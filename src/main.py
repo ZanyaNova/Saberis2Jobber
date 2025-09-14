@@ -221,6 +221,17 @@ def send_to_jobber():
 
     all_desired_line_items = list(aggregated_items.values())
 
+    # --- Step 1: (NEW) Update ProductOrService costs for Jobs ---
+    if item_type == 'Job':
+        for desired_item in all_desired_line_items:
+            product_name = desired_item.get('name')
+            unit_cost = desired_item.get('unitCost')
+            if product_name and unit_cost is not None:
+                success, message = jobber_client.update_or_create_product_or_service(product_name, unit_cost)
+                if not success:
+                    # If updating the product catalog fails, we stop and report the error.
+                    return jsonify({"error": f"Failed to update product catalog for '{product_name}': {message}"}), 500
+
     # --- Step 2: Determine items to add/update (this logic remains the same) ---
     items_to_add: Union[List[QuoteLineEditItemGQL], List[JobCreateLineItemGQL]] = []
     items_to_update: Union[List[QuoteEditLineItemInputGQL], List[JobEditLineItemGQL]] = []
@@ -458,18 +469,17 @@ def jobber_callback_route():
         print("User denied access or no authorization code provided by Jobber.")
         return redirect(url_for('home', message="Authorization failed: User denied access or no code received."))
 
-    print(f"Received authorization code from Jobber: {code[:20]}...") 
-    #DEBUG:
+    print(f"Received authorization code from Jobber: {code[:20]}...")
+    # Call the function ONCE and store the result
     success = exchange_code_for_token(code)
     print(f"DEBUG: exchange_code_for_token returned: {success}")
 
-    if exchange_code_for_token(code):
+    if success:
         print("Authorization successful. Tokens stored.")
         return redirect(url_for('home', message="Authorization successful!"))
     else:
         print("Failed to exchange code for tokens.")
         return redirect(url_for('home', message="Authorization failed: Could not exchange code for token. Check server logs."))
-
 # ---------------------------------------------------------------------------
 # Main Guard
 # ---------------------------------------------------------------------------

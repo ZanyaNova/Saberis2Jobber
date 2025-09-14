@@ -346,13 +346,15 @@ class JobberClient:
 
     def _get_headers(self) -> Dict[str, str]:
         """Retrieves valid token and prepares headers for API requests."""
-        # Always attempt to get the latest valid token via the auth flow
-        current_token = get_valid_access_token()
-        if not current_token:
-            raise ConnectionRefusedError(
-                "Jobber API: No valid access token available. Please authorize or check token refresh."
-            )
-        self.access_token = current_token # Cache for potential reuse by this instance if needed
+        # Use the cached token if it exists
+        if not self.access_token:
+            current_token = get_valid_access_token()
+            if not current_token:
+                raise ConnectionRefusedError(
+                    "Jobber API: No valid access token available. Please authorize or check token refresh."
+                )
+            self.access_token = current_token
+        
         return {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.access_token}",
@@ -654,6 +656,72 @@ class JobberClient:
         except (ConnectionRefusedError, requests.exceptions.RequestException, RuntimeError) as e:
             return False, f"An error occurred while adding line items to job: {e}"    
     
+    def update_or_create_product_or_service(self, product_name: str, unit_cost: float) -> Tuple[bool, str]:
+        """
+        Creates or updates a ProductOrService item in Jobber.
+        """
+        print(f"INFO: Checking/updating ProductOrService '{product_name}' with cost {unit_cost}.")
+
+        # Step 1: Get all existing products to check for existence
+        try:
+            all_products = self.get_all_products_and_services()
+            existing_product = next((p for p in all_products if p['name'] == product_name), None)
+        except Exception as e:
+            return False, f"Failed to get existing products: {e}"
+
+        # Step 2: Update existing product if cost differs
+        if existing_product:
+            # NOTE: The get_all_products_and_services currently doesn't fetch internalUnitCost.
+            # For a full implementation, you'd need to fetch the full product details.
+            # For this example, we'll assume we need to update.
+            mutation = """
+            mutation ProductsAndServicesEdit($productOrServiceId: EncodedId!, $input: ProductsAndServicesEditInput!) {
+            productsAndServicesEdit(productOrServiceId: $productOrServiceId, input: $input) {
+                userErrors { message path }
+            }
+            }
+            """
+            variables = {
+                "productOrServiceId": existing_product['id'],
+                "input": {
+                    "internalUnitCost": unit_cost
+                }
+            }
+            try:
+                raw_data = self._post(mutation, variables)
+                result = raw_data.get("productsAndServicesEdit", {})
+                if result.get("userErrors"):
+                    return False, f"Error updating product: {result['userErrors']}"
+                return True, f"Successfully updated product '{product_name}'."
+            except Exception as e:
+                return False, f"Failed to update product: {e}"
+
+        # Step 3: Create new product if it doesn't exist
+        else:
+            mutation = """
+            mutation ProductsAndServicesCreate($input: ProductsAndServicesInput!) {
+            productsAndServicesCreate(input: $input) {
+                userErrors { message path }
+            }
+            }
+            """
+            variables = {
+                "input": {
+                    "name": product_name,
+                    "category": "PRODUCT",
+                    "internalUnitCost": unit_cost,
+                    "defaultUnitCost": 0 # Required field, but we control price at the line item level
+                }
+            }
+            try:
+                raw_data = self._post(mutation, variables)
+                result = raw_data.get("productsAndServicesCreate", {})
+                if result.get("userErrors"):
+                    return False, f"Error creating product: {result['userErrors']}"
+                return True, f"Successfully created product '{product_name}'."
+            except Exception as e:
+                return False, f"Failed to create product: {e}"
+
     def update_line_items_on_job(self, job_id: str, line_items: List[JobEditLineItemGQL]) -> Tuple[bool, str]:
         """Updates existing line items on a job."""
         if not line_items:
