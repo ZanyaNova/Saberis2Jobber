@@ -656,24 +656,21 @@ class JobberClient:
         except (ConnectionRefusedError, requests.exceptions.RequestException, RuntimeError) as e:
             return False, f"An error occurred while adding line items to job: {e}"    
     
-    def update_or_create_product_or_service(self, product_name: str, unit_cost: float) -> Tuple[bool, str]:
+    
+    def update_or_create_product_or_service(
+        self, product_name: str, unit_cost: float, existing_products: List[Dict[str, str]]
+    ) -> Tuple[bool, str]:
         """
-        Creates or updates a ProductOrService item in Jobber.
+        Creates or updates a ProductOrService item in Jobber using a pre-fetched list.
         """
         print(f"INFO: Checking/updating ProductOrService '{product_name}' with cost {unit_cost}.")
 
-        # Step 1: Get all existing products to check for existence
-        try:
-            all_products = self.get_all_products_and_services()
-            existing_product = next((p for p in all_products if p['name'] == product_name), None)
-        except Exception as e:
-            return False, f"Failed to get existing products: {e}"
+        # Step 1: Check against the provided list instead of making a new API call.
+        existing_product = next((p for p in existing_products if p['name'] == product_name), None)
 
         # Step 2: Update existing product if cost differs
         if existing_product:
-            # NOTE: The get_all_products_and_services currently doesn't fetch internalUnitCost.
-            # For a full implementation, you'd need to fetch the full product details.
-            # For this example, we'll assume we need to update.
+            # (Your existing update logic here remains the same)
             mutation = """
             mutation ProductsAndServicesEdit($productOrServiceId: EncodedId!, $input: ProductsAndServicesEditInput!) {
             productsAndServicesEdit(productOrServiceId: $productOrServiceId, input: $input) {
@@ -702,6 +699,7 @@ class JobberClient:
             mutation ProductsAndServicesCreate($input: ProductsAndServicesInput!) {
             productsAndServicesCreate(input: $input) {
                 userErrors { message path }
+                productOrService { id name }
             }
             }
             """
@@ -710,7 +708,7 @@ class JobberClient:
                     "name": product_name,
                     "category": "PRODUCT",
                     "internalUnitCost": unit_cost,
-                    "defaultUnitCost": 0 # Required field, but we control price at the line item level
+                    "defaultUnitCost": 0
                 }
             }
             try:
@@ -718,6 +716,12 @@ class JobberClient:
                 result = raw_data.get("productsAndServicesCreate", {})
                 if result.get("userErrors"):
                     return False, f"Error creating product: {result['userErrors']}"
+
+                # --- IMPORTANT: Add the newly created product to our local list ---
+                new_product = result.get("productOrService")
+                if new_product:
+                    existing_products.append(new_product)
+
                 return True, f"Successfully created product '{product_name}'."
             except Exception as e:
                 return False, f"Failed to create product: {e}"

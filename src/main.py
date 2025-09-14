@@ -190,8 +190,6 @@ def prune_saberis_exports_route():
 def send_to_jobber():
     """
     API endpoint to add/update items on a Jobber Quote or Job.
-    This endpoint now expects a fully-formed list of line items
-    from the frontend, including the final calculated unitCost (COGS).
     """
     if get_valid_access_token() is None:
         return jsonify({"error": "Not authorized with Jobber"}), 401
@@ -199,7 +197,6 @@ def send_to_jobber():
     data = request.get_json()
     item_id = data.get('itemId')
     item_type = data.get('itemType')
-    # This is the new, detailed payload from the frontend
     desired_line_items = data.get('lineItems')
 
     if not item_id or not item_type or not desired_line_items:
@@ -207,10 +204,6 @@ def send_to_jobber():
 
     jobber_client = JobberClient()
 
-    # --- The transformation logic is now GONE from the backend ---
-    # The 'desired_line_items' variable already contains everything we need.
-    
-    # The aggregation logic, however, is still useful to combine duplicate items.
     aggregated_items: Dict[str, Dict[str, Any]] = {}
     for item in desired_line_items:
         item_name = item["name"]
@@ -221,15 +214,23 @@ def send_to_jobber():
 
     all_desired_line_items = list(aggregated_items.values())
 
-    # --- Step 1: (NEW) Update ProductOrService costs for Jobs ---
+    # --- Step 1: (REVISED) Manage ProductOrService updates ---
     if item_type == 'Job':
+        # Fetch the entire product list ONCE before the loop.
+        try:
+            existing_products_list = jobber_client.get_all_products_and_services()
+        except Exception as e:
+            return jsonify({"error": f"Failed to get existing Jobber products: {e}"}), 500
+
         for desired_item in all_desired_line_items:
             product_name = desired_item.get('name')
             unit_cost = desired_item.get('unitCost')
             if product_name and unit_cost is not None:
-                success, message = jobber_client.update_or_create_product_or_service(product_name, unit_cost)
+                # Pass the list into the function.
+                success, message = jobber_client.update_or_create_product_or_service(
+                    product_name, unit_cost, existing_products_list
+                )
                 if not success:
-                    # If updating the product catalog fails, we stop and report the error.
                     return jsonify({"error": f"Failed to update product catalog for '{product_name}': {message}"}), 500
 
     # --- Step 2: Determine items to add/update (this logic remains the same) ---
