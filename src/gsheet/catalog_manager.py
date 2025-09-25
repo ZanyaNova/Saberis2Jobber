@@ -113,10 +113,11 @@ class CatalogManager:
             # Construct a default using the requested ID and default values
             return CatalogItem(
                 catalog_id=catalog_id,
-                brand="Undefined", # A more generic default brand
+                brand=catalog_id, # Use the catalog_id as the brand name
                 multiplier=DEFAULT_MULTIPLIER,
                 margin=DEFAULT_MARGIN
             )
+
 
     def set_pricing_factors(self, catalog_id: str, multiplier: float, margin: float) -> bool:
         """

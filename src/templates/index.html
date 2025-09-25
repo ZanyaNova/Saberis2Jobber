@@ -121,14 +121,14 @@
                     <div class="column-header">
                         <input type="search" placeholder="Search by name, address, number..." x-model.debounce.150ms="jobberSearchQuery" aria-label="Search Jobber Items">
                         <h3 class="column-title">Jobber</h3>
-                        <!-- <div class="grid">
+                        <div class="grid">
                             <div style="text-align: right;">
                                 <label for="include_quotes" style="display: inline-block; margin-bottom: 0;">
                                     <input type="checkbox" id="include_quotes" x-model="includeQuotes" @change="fetchJobberItems()">
                                     Include Approved Quotes:
                                 </label>
                             </div>
-                        </div> -->
+                        </div>
                     </div>
                     <div class="scrollable-list">
                         <template x-if="isLoadingItems">
