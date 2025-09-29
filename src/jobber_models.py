@@ -359,11 +359,20 @@ class SaberisOrder:
                     key, value = description.split("=", 1)
                     key = key.strip()
                     value = value.strip()
+                    # In SaberisOrder.from_json()
                     if key == "Catalog":
-                        print("Catalog found: " + key)
                         context[key] = value
-                        context["Brand"] = catalog_manager.get_brand(value)
                         cumulative_catalogs.add(value)
+                        
+                        # Get the brand *once* and store it
+                        brand = catalog_manager.get_brand(value)
+
+                        if brand:
+                            # If a brand exists, set it in the context
+                            context["Brand"] = brand
+                        else:
+                            # CRITICAL: If no brand, remove any stale brand from the context
+                            context.pop("Brand", None)
                     else:
                         context[key] = value
 

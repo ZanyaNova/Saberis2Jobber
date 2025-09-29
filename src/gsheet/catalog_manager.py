@@ -1,7 +1,7 @@
 # catalog_manager.py (with dataclass)
 
 import time
-from typing import Dict, List, Final, cast
+from typing import Dict, List, Final, cast, Optional
 from dataclasses import dataclass
 
 from gspread import Worksheet, exceptions
@@ -14,13 +14,9 @@ from .gsheet_config import GSHEET_CATALOG_DATA
 class CatalogItem:
     """A structured representation of a row in our catalog sheet."""
     catalog_id: str
-    brand: str
-    multiplier: float
-    margin: float
-
-# --- Constants ---
-DEFAULT_MULTIPLIER: Final[float] = 0.3
-DEFAULT_MARGIN: Final[float] = 0.6
+    brand: Optional[str]
+    multiplier: Optional[float]
+    margin: Optional[float]
 
 # Column positions in the Google Sheet (1-based index)
 CATALOG_COL: Final[int] = 1
@@ -60,26 +56,26 @@ class CatalogManager:
             
             catalog_id = row[CATALOG_COL - 1].strip()
             
-            brand = catalog_id
+            brand = None
             if len(row) >= BRAND_COL and row[BRAND_COL - 1]:
                 brand = row[BRAND_COL - 1].strip()
 
-            multiplier = DEFAULT_MULTIPLIER
-            if len(row) >= MULTIPLIER_COL:
+            multiplier: Optional[float] = None
+            if len(row) >= MULTIPLIER_COL and row[MULTIPLIER_COL - 1]:
                 try:
                     multiplier = float(row[MULTIPLIER_COL - 1])
                 except (ValueError, TypeError):
                     pass 
 
-            margin = DEFAULT_MARGIN
-            if len(row) >= MARGIN_COL:
+            margin: Optional[float] = None
+            if len(row) >= MARGIN_COL and row[MARGIN_COL - 1]:
                 try:
                     margin = float(row[MARGIN_COL - 1])
                 except (ValueError, TypeError):
                     pass
             
             cache[catalog_id] = CatalogItem(
-                catalog_id=catalog_id, # Add the ID to the object itself
+                catalog_id=catalog_id,
                 brand=brand, 
                 multiplier=multiplier, 
                 margin=margin
@@ -94,9 +90,9 @@ class CatalogManager:
         if self._is_stale():
             self._refresh()
 
-    def get_brand(self, catalog_id: str) -> str:
+    def get_brand(self, catalog_id: str) -> str | None:
         """Gets the brand for a catalog ID."""
-        return self.get_catalog_item(catalog_id).brand
+        return self.get_catalog_item(catalog_id).brand 
 
     def get_catalog_item(self, catalog_id: str) -> CatalogItem:
         """
@@ -109,13 +105,13 @@ class CatalogManager:
         if item:
             return item
         else:
-            print(f"No entry in cache for catalog_id: {catalog_id}, returning a default item.")
-            # Construct a default using the requested ID and default values
+            print(f"No entry in cache for catalog_id: {catalog_id}, returning an item with null pricing.")
+            # Construct a new item with null values for pricing factors
             return CatalogItem(
                 catalog_id=catalog_id,
-                brand=catalog_id, # Use the catalog_id as the brand name
-                multiplier=DEFAULT_MULTIPLIER,
-                margin=DEFAULT_MARGIN
+                brand=None,
+                multiplier=None,
+                margin=None
             )
 
 

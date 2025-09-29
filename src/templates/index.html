@@ -86,7 +86,7 @@
                         <template x-for="catalog in paginatedUniqueCatalogs" :key="catalog">
                             <article class="catalog-card" :class="{ 'is-ignored': !includedCatalogs.includes(catalog) }">
                                 <header>
-                                    <strong x-text="catalogPricingData[catalog] ? catalogPricingData[catalog].brand : catalog"></strong>
+                                    <strong x-text="catalogPricingData[catalog]?.brand ? `${catalogPricingData[catalog].brand}: ${catalog}` : catalog"></strong>
                                     <div class="include-toggle">
                                         <label>
                                             <span class="include-label">include:</span>
@@ -96,9 +96,9 @@
                                 </header>
                                 <div class="pricing-inputs">
                                     <label :for="'multiplier-' + catalog">Mult</label>
-                                    <input :id="'multiplier-' + catalog" type="number" step="0.01" class="input-small" x-model.number="catalogPricingData[catalog].multiplier" @input="onPricingInputChange()">
+                                    <input :id="'multiplier-' + catalog" type="number" step="0.01" class="input-small" x-model.number="catalogPricingData[catalog].multiplier" @input="onPricingInputChange()" :aria-invalid="!isPricingFactorValid(catalogPricingData[catalog]?.multiplier)">
                                     <label :for="'margin-' + catalog">Margin</label>
-                                    <input :id="'margin-' + catalog" type="number" step="0.01" class="input-small" x-model.number="catalogPricingData[catalog].margin" @input="onPricingInputChange()" placeholder="e.g. 0.25">
+                                    <input :id="'margin-' + catalog" type="number" step="0.01" class="input-small" x-model.number="catalogPricingData[catalog].margin" @input="onPricingInputChange()" placeholder="e.g. 0.25" :aria-invalid="!isPricingFactorValid(catalogPricingData[catalog]?.margin)">
                                 </div>
                                 <hr class="card-separator">
                                 <div class="cost-details">
@@ -115,9 +115,12 @@
                         <span x-text="`Page ${catalogCurrentPage} of ${totalCatalogPages}`"></span>
                         <button @click="catalogCurrentPage++" :disabled="catalogCurrentPage === totalCatalogPages">Next &gt;</button>
                     </div>
+                    <p x-show="isSelectionComplete() && !arePricingFactorsValid()" style="color: var(--pico-color-red-500); font-size: 0.9em; text-align: center; margin-top: 1rem;">
+                        All included catalogs must have a Multiplier and Margin.
+                    </p>
                 </section>
 
-                <section :class="{ 'content-hidden': !isSelectionComplete() }">
+                <section :class="{ 'content-hidden': !isSelectionComplete() || !arePricingFactorsValid() }">
                     <div class="column-header">
                         <input type="search" placeholder="Search by name, address, number..." x-model.debounce.150ms="jobberSearchQuery" aria-label="Search Jobber Items">
                         <h3 class="column-title">Jobber</h3>
@@ -144,9 +147,14 @@
                                     <small x-text="item.shipping_address"></small><br>
                                     <small class="exported-by-label" x-text="item.type === 'Job' ? `Status: ${item.status}` : `Approved: ${item.status}`"></small>
                                     <div x-show="selectedItemId === item.id" style="margin-top: 1rem;">
-                                        <button @click.stop="clearS2JEntries(item)" class="secondary outline" style="width: 100%;">
-                                            Clear S2J Entries
-                                        </button>
+                                        <div style="display: flex; gap: 1rem;">
+                                            <button @click.stop="clearS2JEntries(item)" class="secondary outline" style="width: 100%;" title="Remove all S2J entries from the Jobber job/quote">
+                                                Clear
+                                            </button>
+                                            <button @click="sendToJobber()" :disabled="!isReadyToSend() || isSending" :aria-busy="isSending", style="width: 100%;" title="Add cabinets from the seleceted Saberis Exports and catalogs">
+                                                Add
+                                            </button>
+                                        </div>
                                     </div>
                                 </article>
                             </template>
@@ -162,13 +170,9 @@
                     </div>
                 </section>
 
-                <aside :class="{ 'content-hidden': !isSelectionComplete() }">
+                <aside :class="{ 'content-hidden': !isSelectionComplete() || !arePricingFactorsValid() }">
+                    <div></div>
                     <div class="column-header">
-                        <div>
-                            <button @click="sendToJobber()" :disabled="!isReadyToSend() || isSending" :aria-busy="isSending">
-                                Send Items to Jobber
-                            </button>
-                        </div>
                         <h3 class="column-title">Totals</h3>
                     </div>
                     <article>
@@ -549,8 +553,19 @@
                 if (this.selectedExportIds.length === 0) return false;
                 return this.selectedExportIds.every(id => this.getQuantityFor(id));
             },
+            isPricingFactorValid(value) {
+                // A valid factor must be a finite number. null, undefined, or empty strings are invalid.
+                return value !== null && value !== undefined && isFinite(value);
+            },
+            arePricingFactorsValid() {
+                if (this.includedCatalogs.length === 0) return true; // No catalogs to validate.
+                return this.includedCatalogs.every(catalog => {
+                    const data = this.catalogPricingData[catalog];
+                    return data && this.isPricingFactorValid(data.multiplier) && this.isPricingFactorValid(data.margin);
+                });
+            },
             isReadyToSend() {
-                return this.isSelectionComplete() && this.selectedItemId !== null;
+                return this.isSelectionComplete() && this.selectedItemId !== null && this.arePricingFactorsValid();
             },
             nearlyEquals(a, b, epsilon = 0.001) {
                 const absA = Math.abs(a);
@@ -687,19 +702,27 @@
 
             calculateCOGS(catalog) {
                 const msrp = this.catalogBaseCosts[catalog] || 0;
-                const multiplier = this.catalogPricingData[catalog]?.multiplier || 0;
+                const multiplier = this.catalogPricingData[catalog]?.multiplier;
+                if (!this.isPricingFactorValid(multiplier)) {
+                    return 0;
+                }
                 return msrp * multiplier;
             },
             calculateMarkup(catalog) {
                 const cogs = this.calculateCOGS(catalog);
-                const margin = this.catalogPricingData[catalog]?.margin || 0;
-                if (margin >= 1) return 0;
+                const margin = this.catalogPricingData[catalog]?.margin;
+                if (!this.isPricingFactorValid(margin) || margin >= 1) {
+                    return 0; // If margin isn't valid, there's no markup.
+                }
                 return this.calculateCustomerPrice(catalog) - cogs;
             },
             calculateCustomerPrice(catalog) {
                 const cogs = this.calculateCOGS(catalog);
-                const margin = this.catalogPricingData[catalog]?.margin || 0;
-                if (margin >= 1) return cogs;
+                const margin = this.catalogPricingData[catalog]?.margin;
+                // If margin is invalid or makes no sense, customer price is just COGS.
+                if (!this.isPricingFactorValid(margin) || margin >= 1) {
+                    return cogs;
+                }
                 return cogs / (1 - margin);
             },
             formatCurrency(amount) {
