@@ -82,34 +82,39 @@
                             </span>
                         </h3>
                     </div>
-                    <div class="scrollable-list" style="max-height: 85vh;">
-                        <template x-for="catalog in paginatedUniqueCatalogs" :key="catalog">
-                            <article class="catalog-card" :class="{ 'is-ignored': !includedCatalogs.includes(catalog) }">
-                                <header>
-                                    <strong x-text="catalogPricingData[catalog]?.brand ? `${catalogPricingData[catalog].brand}: ${catalog}` : catalog"></strong>
-                                    <div class="include-toggle">
-                                        <label>
-                                            <span class="include-label">include:</span>
-                                            <input type="checkbox" :value="catalog" x-model="includedCatalogs">
-                                        </label>
+                    <template x-if="isFetchingPricing">
+                        <article aria-busy="true">Fetching saved pricing data...</article>
+                    </template>
+                    <template x-if="!isFetchingPricing">
+                        <div class="scrollable-list" style="max-height: 85vh;">
+                            <template x-for="catalog in paginatedUniqueCatalogs" :key="catalog">
+                                <article class="catalog-card" :class="{ 'is-ignored': !includedCatalogs.includes(catalog) }">
+                                    <header>
+                                        <strong x-text="catalogPricingData[catalog]?.brand ? `${catalogPricingData[catalog].brand}: ${catalog}` : catalog"></strong>
+                                        <div class="include-toggle">
+                                            <label>
+                                                <span class="include-label">include:</span>
+                                                <input type="checkbox" :value="catalog" x-model="includedCatalogs">
+                                            </label>
+                                        </div>
+                                    </header>
+                                    <div class="pricing-inputs">
+                                        <label :for="'multiplier-' + catalog">Mult</label>
+                                        <input :id="'multiplier-' + catalog" type="number" step="0.01" class="input-small" x-model.number="catalogPricingData[catalog].multiplier" @input="onPricingInputChange()" :aria-invalid="!isPricingFactorValid(catalogPricingData[catalog]?.multiplier)">
+                                        <label :for="'margin-' + catalog">Margin</label>
+                                        <input :id="'margin-' + catalog" type="number" step="0.01" class="input-small" x-model.number="catalogPricingData[catalog].margin" @input="onPricingInputChange()" placeholder="e.g. 0.25" :aria-invalid="!isPricingFactorValid(catalogPricingData[catalog]?.margin)">
                                     </div>
-                                </header>
-                                <div class="pricing-inputs">
-                                    <label :for="'multiplier-' + catalog">Mult</label>
-                                    <input :id="'multiplier-' + catalog" type="number" step="0.01" class="input-small" x-model.number="catalogPricingData[catalog].multiplier" @input="onPricingInputChange()" :aria-invalid="!isPricingFactorValid(catalogPricingData[catalog]?.multiplier)">
-                                    <label :for="'margin-' + catalog">Margin</label>
-                                    <input :id="'margin-' + catalog" type="number" step="0.01" class="input-small" x-model.number="catalogPricingData[catalog].margin" @input="onPricingInputChange()" placeholder="e.g. 0.25" :aria-invalid="!isPricingFactorValid(catalogPricingData[catalog]?.margin)">
-                                </div>
-                                <hr class="card-separator">
-                                <div class="cost-details">
-                                    <p class="currency-line subtle-line">MSRP: <strong x-text="formatCurrency(catalogBaseCosts[catalog] || 0)"></strong></p>
-                                    <p>COGS: <strong x-text="formatCurrency(calculateCOGS(catalog))"></strong></p>
-                                    <p>Markup: <strong x-text="formatCurrency(calculateMarkup(catalog))"></strong></p>
-                                    <p>Customer Price: <strong x-text="formatCurrency(calculateCustomerPrice(catalog))"></strong></p>
-                                </div>
-                            </article>
-                        </template>
-                    </div>
+                                    <hr class="card-separator">
+                                    <div class="cost-details">
+                                        <p class="currency-line subtle-line">MSRP: <strong x-text="formatCurrency(catalogBaseCosts[catalog] || 0)"></strong></p>
+                                        <p>COGS: <strong x-text="formatCurrency(calculateCOGS(catalog))"></strong></p>
+                                        <p>Markup: <strong x-text="formatCurrency(calculateMarkup(catalog))"></strong></p>
+                                        <p>Customer Price: <strong x-text="formatCurrency(calculateCustomerPrice(catalog))"></strong></p>
+                                    </div>
+                                </article>
+                            </template>
+                        </div>
+                    </template>
                     <div x-show="totalCatalogPages > 1" class="pagination-controls">
                         <button @click="catalogCurrentPage--" :disabled="catalogCurrentPage === 1">&lt; Prev</button>
                         <span x-text="`Page ${catalogCurrentPage} of ${totalCatalogPages}`"></span>
@@ -469,7 +474,7 @@
             // Jobber
             jobberAuthStatus: 'checking',
             jobberItems: [],
-            jobberItemType: 'jobs',
+            jobberItemType: 'quotes',
             jobberSearchQuery: '',
             selectedItemId: null,
             jobberCurrentPage: 1,
@@ -483,6 +488,7 @@
             includedCatalogs: [],
 
             // Quote Calculation
+            isFetchingPricing: false,
             uniqueCatalogs: [],
             catalogPricingData: {},
             catalogBaseCosts: {},
@@ -688,22 +694,28 @@
                 this.catalogBaseCosts = newBaseCosts;
                 const catalogsToFetch = this.uniqueCatalogs.filter(catalog => this.originalCatalogPricingData[catalog] === undefined);
                 if (catalogsToFetch.length > 0) {
-                    const fetchPromises = catalogsToFetch.map(catalog =>
-                        fetch(`/api/catalog-item/${catalog}`).then(response => response.ok ? response.json() : Promise.reject(`Failed to fetch ${catalog}`))
-                    );
-                    const results = await Promise.allSettled(fetchPromises);
-                    results.forEach(result => {
-                        if (result.status === 'fulfilled') {
-                            const item = result.value;
-                            this.catalogPricingData[item.catalog_id] = { ...item };
-                            this.originalCatalogPricingData[item.catalog_id] = { ...item };
-                        } else {
-                            console.error(result.reason);
-                        }
-                    });
+                    this.isFetchingPricing = true;
+                    try {
+                        const fetchPromises = catalogsToFetch.map(catalog =>
+                            fetch(`/api/catalog-item/${catalog}`).then(response => response.ok ? response.json() : Promise.reject(`Failed to fetch ${catalog}`))
+                        );
+                        const results = await Promise.allSettled(fetchPromises);
+                        results.forEach(result => {
+                            if (result.status === 'fulfilled') {
+                                const item = result.value;
+                                this.catalogPricingData[item.catalog_id] = { ...item
+                                };
+                                this.originalCatalogPricingData[item.catalog_id] = { ...item
+                                };
+                            } else {
+                                console.error(result.reason);
+                            }
+                        });
+                    } finally {
+                        this.isFetchingPricing = false;
+                    }
                 }
             },
-
             calculateCOGS(catalog) {
                 const msrp = this.catalogBaseCosts[catalog] || 0;
                 const multiplier = this.catalogPricingData[catalog]?.multiplier;
