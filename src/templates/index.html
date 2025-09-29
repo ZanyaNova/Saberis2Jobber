@@ -120,7 +120,7 @@
                         <span x-text="`Page ${catalogCurrentPage} of ${totalCatalogPages}`"></span>
                         <button @click="catalogCurrentPage++" :disabled="catalogCurrentPage === totalCatalogPages">Next &gt;</button>
                     </div>
-                    <p x-show="isSelectionComplete() && !arePricingFactorsValid()" style="color: var(--pico-color-red-500); font-size: 0.9em; text-align: center; margin-top: 1rem;">
+                    <p x-show="isSelectionComplete() && !arePricingFactorsValid() && !isFetchingPricing" style="color: var(--pico-color-red-500); font-size: 0.9em; text-align: center; margin-top: 1rem;">
                         All included catalogs must have a Multiplier and Margin.
                     </p>
                 </section>
@@ -128,7 +128,6 @@
                 <section :class="{ 'content-hidden': !isSelectionComplete() || !arePricingFactorsValid() }">
                     <div class="column-header">
                         <input type="search" placeholder="Search by name, address, number..." x-model.debounce.150ms="jobberSearchQuery" aria-label="Search Jobber Items">
-                        <h3 class="column-title">Jobber</h3>
                         <div class="task-switcher" style="margin-bottom: 0;">
                             <button @click="setJobberItemType('quotes')" :class="{ 'contrast': jobberItemType === 'quotes' }" style="width: 100%">Quotes</button>
                             <button @click="setJobberItemType('jobs')" :class="{ 'contrast': jobberItemType === 'jobs' }" style="width: 100%">Jobs</button>
@@ -149,10 +148,10 @@
                                     <small class="exported-by-label" x-text="`Status: ${item.status}`"></small>
                                     <div x-show="selectedItemId === item.id" style="margin-top: 1rem;">
                                         <div style="display: flex; gap: 1rem;">
-                                            <button @click.stop="clearS2JEntries(item)" class="secondary outline" style="width: 100%;" title="Remove all S2J entries from the Jobber job/quote">
+                                            <button @click.stop="clearS2JEntries(item)" class="secondary outline btn-small" style="width: 100%;" title="Remove all S2J entries from the Jobber job/quote">
                                                 Clear
                                             </button>
-                                            <button @click="sendToJobber()" :disabled="!isReadyToSend() || isSending" :aria-busy="isSending", style="width: 100%;" title="Add cabinets from the seleceted Saberis Exports and catalogs">
+                                            <button @click="sendToJobber()" class="btn-small" :disabled="!isReadyToSend() || isSending" :aria-busy="isSending", style="width: 100%;" title="Add cabinets from the seleceted Saberis Exports and catalogs">
                                                 Add
                                             </button>
                                         </div>
@@ -219,14 +218,14 @@
     .task-switcher {
         display: flex;
         align-items: center;
-        gap: 1rem;
-        margin-bottom: 1.5rem;
+        width: 100%;
+        gap: .5rem;
+        margin-bottom: 0rem;
     }
-    .task-switcher h2 {
-        margin: 0;
-    }
-    .task-switcher-title {
-        margin-left: auto;
+    .task-switcher button {
+        flex-grow: 1;  /* Allows each button to grow and fill the available space equally */
+        text-align: center; /* Ensures the text inside each button is centered */
+        width: 100%;
     }
     .selected-card, .selected-export {
         border-color: var(--pico-primary-border);

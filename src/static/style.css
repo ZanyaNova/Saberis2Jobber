@@ -97,6 +97,17 @@ article.export-card {
     margin: 0;
 }
 
+.btn-small {
+    --pico-font-size: 0.75rem; 
+    --pico-font-weight: bold;
+    --pico-form-element-spacing-vertical: 0.5rem;
+    --pico-form-element-spacing-horizontal: 1rem;
+    padding-top: .25rem;
+    padding-bottom: .25rem;
+    padding-left: .25rem;
+    padding-right: .25rem;
+}
+
 .input-small {
     font-size: 0.9em; /* Adjust font size as needed */
     --pico-form-element-spacing-vertical: 0.25rem; /* Reduces top/bottom padding */
