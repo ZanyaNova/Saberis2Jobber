@@ -415,6 +415,57 @@ def clear_s2j_entries_route():
         print(f"ERROR: Could not clear S2J entries: {e}")
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/estimate-quote', methods=['POST'])
+def estimate_quote():
+    """
+    API endpoint to find and update the MSRP and Sale Discount line items on a quote.
+    """
+    if get_valid_access_token() is None:
+        return jsonify({"error": "Not authorized with Jobber"}), 401
+
+    data = request.get_json()
+    quote_id = data.get('quoteId')
+    total_msrp = data.get('msrp')
+    total_discount = data.get('discount')
+
+    if not all([quote_id, total_msrp is not None, total_discount is not None]):
+        return jsonify({"error": "Missing quoteId, msrp, or discount data"}), 400
+
+    jobber_client = JobberClient()
+    MSRP_LINE_ITEM_NAME = "Made-to-Order Cabinetry - MSRP"
+    DISCOUNT_LINE_ITEM_NAME = "Made-to-Order Cabinetry – Sale Discount"
+
+    try:
+        quote_details = jobber_client.get_quote_with_line_items(quote_id)
+        if not quote_details:
+            return jsonify({"error": f"Could not find quote with ID: {quote_id}"}), 404
+
+        line_items = quote_details.get("lineItems", {}).get("nodes", [])
+        
+        msrp_item = next((item for item in line_items if item.get('name') == MSRP_LINE_ITEM_NAME), None)
+        discount_item = next((item for item in line_items if item.get('name') == DISCOUNT_LINE_ITEM_NAME), None)
+
+        if not msrp_item or not discount_item:
+            return jsonify({
+                "error": f"Operation failed. The quote is missing one or both required line items: '{MSRP_LINE_ITEM_NAME}', '{DISCOUNT_LINE_ITEM_NAME}'. Please use a quote template that includes them."
+            }), 400
+
+        items_to_update: List[QuoteEditLineItemInputGQL] = [
+            {"lineItemId": msrp_item['id'], "unitPrice": total_msrp, "quantity": 1},
+            {"lineItemId": discount_item['id'], "unitPrice": -abs(total_discount), "quantity": 1}
+        ]
+
+        success, message = jobber_client.update_line_items_on_quote(quote_id, items_to_update)
+
+        if not success:
+            return jsonify({"error": f"Failed to update line items: {message}"}), 500
+
+        return jsonify({"message": "Successfully updated MSRP and Discount line items on the quote."})
+
+    except Exception as e:
+        print(f"ERROR: Could not perform quote estimation: {e}")
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/')
 def home():
     status_message = "Checking authorization status..."

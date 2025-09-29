@@ -128,6 +128,9 @@ def ingest_saberis_exports() -> List[SaberisExportRecord]:
 
         print(f"INFO: Found new Saberis doc {guid}. Downloading…")
         doc_json = client.get_export_document_by_id(guid)
+        # DEBUG:
+        print(json.dumps(doc_json, indent=2))
+
         if not doc_json:
             print(f"WARN: Could not download Saberis doc {guid}; skipping.")
             continue

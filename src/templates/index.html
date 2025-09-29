@@ -148,10 +148,31 @@
                                     <small class="exported-by-label" x-text="`Status: ${item.status}`"></small>
                                     <div x-show="selectedItemId === item.id" style="margin-top: 1rem;">
                                         <div style="display: flex; gap: 1rem;">
-                                            <button @click.stop="clearS2JEntries(item)" class="secondary outline btn-small" style="width: 100%;" title="Remove all S2J entries from the Jobber job/quote">
+                                            <button 
+                                                x-show="item.type === 'Quote'"
+                                                @click.stop="estimateQuote(item)" 
+                                                class="btn-small" 
+                                                style="width: 100%;" 
+                                                :aria-busy="isEstimating"
+                                                title="Fill in MSRP and discount line items for quote. Quote must be from a template (or at least have MSRP and discount line items with exact matching titles)">
+                                                Fill MSRP, Discount
+                                            </button>
+                                            <button 
+                                                @click.stop="clearS2JEntries(item)" 
+                                                x-show="item.type === 'Job'"
+                                                class="secondary outline btn-small" 
+                                                style="width: 100%;" 
+                                                title="Remove all S2J entries from the Jobber job/quote">
                                                 Clear
                                             </button>
-                                            <button @click="sendToJobber()" class="btn-small" :disabled="!isReadyToSend() || isSending" :aria-busy="isSending", style="width: 100%;" title="Add cabinets from the seleceted Saberis Exports and catalogs">
+                                            <button 
+                                                @click="sendToJobber()" 
+                                                x-show="item.type === 'Job'"
+                                                class="btn-small" 
+                                                :disabled="!isReadyToSend() || isSending" 
+                                                :aria-busy="isSending", 
+                                                style="width: 100%;" 
+                                                title="Add cabinets from the seleceted Saberis Exports and catalogs">
                                                 Add
                                             </button>
                                         </div>
@@ -469,6 +490,8 @@
             isLoadingItems: false,
             isSending: false,
             isAuthorizing: false,
+            isFetchingPricing: false,
+            isEstimating: false,
 
             // Jobber
             jobberAuthStatus: 'checking',
@@ -487,7 +510,6 @@
             includedCatalogs: [],
 
             // Quote Calculation
-            isFetchingPricing: false,
             uniqueCatalogs: [],
             catalogPricingData: {},
             catalogBaseCosts: {},
@@ -608,6 +630,43 @@
                 if (this.totalMSRP === 0) return '0.0';
                 const percent = (this.customerDiscount / this.totalMSRP) * 100;
                 return percent.toFixed(1);
+            },
+
+            async estimateQuote(item) {
+                if (this.isEstimating) return;
+                
+                const msrp = this.totalMSRP;
+                const discount = this.customerDiscount;
+
+                if (!confirm(`This will update the MSRP and Discount line items on Quote ${item.number} to:\n\nMSRP: ${this.formatCurrency(msrp)}\nDiscount: ${this.formatCurrency(-Math.abs(discount))}\n\nThis action cannot be undone. Proceed?`)) {
+                    return;
+                }
+
+                this.isEstimating = true;
+
+                try {
+                    const response = await fetch('/api/estimate-quote', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            quoteId: item.id,
+                            msrp: msrp,
+                            discount: discount
+                        }),
+                    });
+
+                    const result = await response.json();
+                    if (!response.ok) {
+                        throw new Error(result.error || `HTTP error! status: ${response.status}`);
+                    }
+                    alert(result.message || 'Successfully updated the quote.');
+
+                } catch (error) {
+                    console.error("Error during quote estimation:", error);
+                    alert(`An error occurred: ${error.message}`);
+                } finally {
+                    this.isEstimating = false;
+                }
             },
 
             init() {

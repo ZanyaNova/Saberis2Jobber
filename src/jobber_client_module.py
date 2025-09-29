@@ -235,6 +235,7 @@ class QuoteEditLineItemInputGQL(TypedDict):
     """Input for updating a single line item."""
     lineItemId: str
     quantity: float
+    unitPrice: float
 
 class QuoteEditLineItemsVariablesGQL(TypedDict):
     """Variables for the quoteEditLineItems mutation."""

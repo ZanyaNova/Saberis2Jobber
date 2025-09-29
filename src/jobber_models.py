@@ -382,8 +382,6 @@ class SaberisOrder:
 
             # If it's a "Product" line, create an enriched item using the current context
             elif item_type == "product":
-                print("context at 'SaberisLineItem.from_json")
-                print(context)
                 processed_item = SaberisLineItem.from_json(raw_item_dict, context.copy())
                 cumulative_volume += processed_item.volume
                 
