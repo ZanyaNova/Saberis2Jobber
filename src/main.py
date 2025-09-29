@@ -89,45 +89,44 @@ def _transform_items_for_ui(item: Union[QuoteNodeGQL, JobNodeGQL], item_type: st
 # ---------------------------------------------------------------------------
 # Flask Web Routes
 # ---------------------------------------------------------------------------
-# In main.py
-
 @app.route('/api/jobber-items')
 def get_jobber_items():
     """
-    API endpoint to serve a COMPLETE list of Jobber jobs and, optionally, approved quotes.
+    API endpoint to serve a COMPLETE list of Jobber jobs OR quotes.
     This function now handles pagination from the Jobber API internally.
     """
     if get_valid_access_token() is None:
         return jsonify({"error": "Not authorized with Jobber"}), 401
 
     jobber_client = JobberClient()
-    include_quotes = request.args.get('include_quotes', 'false').lower() == 'true'
+    item_type = request.args.get('item_type', 'jobs') # Default to 'jobs'
     
     all_items: List[JobberItemForUI] = []
 
     try:
-        # --- Fetch all active jobs ---
-        job_cursor: Optional[str] = None
-        while True:
-            job_page = jobber_client.get_jobs(cursor=job_cursor)
-            transformed_jobs = [_transform_items_for_ui(job, 'Job') for job in job_page["jobs"]]
-            all_items.extend(transformed_jobs)
-            if not job_page.get("has_next_page"):
-                break
-            job_cursor = job_page.get("next_cursor")
-
-        # --- Optionally fetch all approved quotes ---
-        if include_quotes:
-            quote_cursor: Optional[str] = None
+        if item_type == 'jobs':
+            # --- Fetch all active jobs ---
+            cursor: Optional[str] = None
             while True:
-                quote_page = jobber_client.get_approved_quotes(cursor=quote_cursor)
-                transformed_quotes = [_transform_items_for_ui(quote, 'Quote') for quote in quote_page["quotes"]]
-                all_items.extend(transformed_quotes)
-                if not quote_page.get("has_next_page"):
+                page = jobber_client.get_jobs(cursor=cursor)
+                transformed_items = [_transform_items_for_ui(job, 'Job') for job in page["jobs"]]
+                all_items.extend(transformed_items)
+                if not page.get("has_next_page"):
                     break
-                quote_cursor = quote_page.get("next_cursor")
+                cursor = page.get("next_cursor")
+        
+        elif item_type == 'quotes':
+            # --- Fetch all quotes ---
+            cursor: Optional[str] = None
+            while True:
+                page = jobber_client.get_all_quotes(cursor=cursor)
+                transformed_items = [_transform_items_for_ui(quote, 'Quote') for quote in page["quotes"]]
+                all_items.extend(transformed_items)
+                if not page.get("has_next_page"):
+                    break
+                cursor = page.get("next_cursor")
 
-        # Sort the final combined list
+        # Sort the final list
         all_items.sort(key=lambda x: (x['client_name'], x['type']))
         
         # The response is now a single object with the complete list

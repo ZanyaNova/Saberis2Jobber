@@ -1024,9 +1024,9 @@ class JobberClient:
             print(f"ERROR: Failed to fetch details for job {job_id}: {e}")
             return None
 
-    def get_approved_quotes(self, cursor: Optional[str] = None) -> QuotePageGQL:
+    def get_all_quotes(self, cursor: Optional[str] = None) -> QuotePageGQL:
         """
-        Fetches a single page of approved quotes from Jobber.
+        Fetches a single page of all quotes from Jobber, sorted by most recently created.
 
         Args:
             cursor: The cursor for the page to retrieve. If None, retrieves the first page.
@@ -1038,12 +1038,12 @@ class JobberClient:
         Raises:
             RuntimeError: If the API call fails or returns an unexpected structure.
         """
-        log_message = f"Fetching a page of approved quotes starting from cursor: {cursor}" if cursor else "Fetching first page of approved quotes."
+        log_message = f"Fetching a page of all quotes starting from cursor: {cursor}" if cursor else "Fetching first page of all quotes."
         print(f"INFO: {log_message}")
 
         query = """
-        query GetApprovedQuotes($cursor: String) {
-          quotes(first: 50, after: $cursor, filter: { status: approved }) {
+        query GetAllQuotes($cursor: String) {
+          quotes(first: 50, after: $cursor, sort: [{key: CREATED_AT, direction: DESCENDING}]) {
             edges {
               cursor
               node {
@@ -1054,6 +1054,7 @@ class JobberClient:
                 client { id name }
                 property { id address { street1 city province postalCode } }
                 amounts { total }
+                quoteStatus
               }
             }
             pageInfo {
@@ -1087,7 +1088,7 @@ class JobberClient:
                 # The cursor for the *next* page is the cursor of the *last* item on this page
                 next_cursor = edges[-1].get("cursor")
 
-            print(f"SUCCESS: Retrieved {len(quotes_on_page)} approved quotes. has_next_page: {has_next_page}")
+            print(f"SUCCESS: Retrieved {len(quotes_on_page)} quotes. has_next_page: {has_next_page}")
 
             return {
                 "quotes": quotes_on_page,
@@ -1096,9 +1097,9 @@ class JobberClient:
             }
 
         except (ConnectionRefusedError, requests.exceptions.RequestException, RuntimeError) as e:
-            print(f"ERROR: Failed to fetch approved quotes from Jobber: {e}")
+            print(f"ERROR: Failed to fetch quotes from Jobber: {e}")
             raise
-    
+
     def delete_s2j_line_items(self, item_id: str, item_type: str) -> Tuple[bool, str]:
         """
         Deletes all line items containing the 'S2J' signature from a Job or Quote.
