@@ -27,6 +27,9 @@ class SaberisShippingDict(TypedDict, total=False):
 class SaberisCustomerDict(TypedDict, total=False):
     """Structure expected within Saberis 'Customer' field."""
     Name: str
+    FirstName: str
+    LastName: str
+    CustomerCode: str
 
 class SaberisHeaderDict(TypedDict, total=False):
     """Structure expected within Saberis 'Header' field."""
@@ -287,6 +290,7 @@ class SaberisOrder:
     created_at: datetime
     customer_name: str
     shipping_address: ShippingAddress
+    customer_code: str = ""
     total_volume: int = 0
     catalog_to_total_cost: Dict[str, float] = field(default_factory=Dict) #type:ignore
     catalogs: set[str] = field(default_factory=set) #type: ignore
@@ -308,7 +312,19 @@ class SaberisOrder:
             created_at = datetime(1970, 1, 1) # Fallback
 
         customer_info = order_node.get("Customer", {})
-        customer_name = str(customer_info.get("Name") or "Unnamed Client")
+
+        # Prefer FirstName/LastName if available, fall back to Name
+        first_name = str(customer_info.get("FirstName") or "").strip()
+        last_name = str(customer_info.get("LastName") or "").strip()
+        customer_code = str(customer_info.get("CustomerCode") or "").strip()
+        full_name = str(customer_info.get("Name") or "").strip()
+
+        if first_name or last_name:
+            customer_name = " ".join(p for p in [first_name, last_name] if p)
+        elif full_name:
+            customer_name = full_name
+        else:
+            customer_name = "Unnamed Client"
 
         shipping_raw = order_node.get("Shipping", {})
         ship_addr: ShippingAddress = {
@@ -394,6 +410,7 @@ class SaberisOrder:
             username=username,
             created_at=created_at,
             customer_name=customer_name,
+            customer_code=customer_code,
             shipping_address=ship_addr,
             lines=processed_lines,
             total_volume=cumulative_volume,
@@ -458,6 +475,14 @@ def get_line_items_from_export(saberis_data: SaberisDocumentDict, ui_quantity: i
     saberis_order = SaberisOrder.from_json(saberis_data)
     jobber_lines: List[QuoteLineEditItemGQL] = []
 
+    # Build customer line for descriptions
+    customer_parts: list[str] = []
+    if saberis_order.customer_name and saberis_order.customer_name != "Unnamed Client":
+        customer_parts.append(f"Customer: {saberis_order.customer_name}")
+    if saberis_order.customer_code:
+        customer_parts.append(f"Code: {saberis_order.customer_code}")
+    customer_line = " | ".join(customer_parts)
+
     for li in saberis_order.lines:
         if li.type != "Product":
             continue
@@ -479,6 +504,8 @@ def get_line_items_from_export(saberis_data: SaberisDocumentDict, ui_quantity: i
 
         base_product_name = " | ".join(filter(None, base_name_parts))
         jobber_description = "\n".join(description_parts)
+        if customer_line:
+            jobber_description = f"{customer_line}\n{jobber_description}" if jobber_description else customer_line
 
         signature_str = f"{base_product_name}{jobber_description}"
         hash_object = hashlib.md5(signature_str.encode('utf-8'))

@@ -209,6 +209,16 @@
                 </aside>
             </div>
         </template>
+
+        <div class="warning-bar" x-show="allDisplayedWarnings.length > 0" x-cloak>
+            <template x-for="warning in allDisplayedWarnings" :key="warning.key">
+                <p class="warning-item" :class="{ 'is-fading': warning.fading }">
+                    <strong x-text="warning.level + ':'"></strong>
+                    <span x-text="warning.message"></span>
+                </p>
+            </template>
+        </div>
+
     </div>
 
 <style>
@@ -363,6 +373,42 @@
     .column-title {
         text-align: center;
     }
+
+    .warning-bar {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        z-index: 1000;
+        padding: 0.75rem 2rem;
+        margin: 0 1.5rem 1rem 1.5rem;
+        background: var(--pico-card-background-color);
+        border: 1px solid var(--pico-color-red-500);
+        border-radius: var(--pico-border-radius);
+        box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    .warning-item {
+        color: var(--pico-color-red-500);
+        margin: 0.35rem 0;
+        font-size: 0.85em;
+        line-height: 1.4;
+        opacity: 1;
+    }
+
+    .warning-item.is-fading {
+        opacity: 0;
+        animation: fadeOutWarning 3s ease-out forwards;
+    }
+
+    @keyframes fadeOutWarning {
+        0% { opacity: 0.5; }
+        100% { opacity: 0; }
+    }
+
+    [x-cloak] {
+        display: none !important;
+    }
 </style>
 
 <script>
@@ -417,6 +463,25 @@
                 return [];
             }
 
+            // Extract customer info for line item descriptions
+            const customerNode = saberisData?.SaberisOrderDocument?.Order?.Customer || {};
+            const firstName = (customerNode.FirstName || "").trim();
+            const lastName = (customerNode.LastName || "").trim();
+            const customerCode = (customerNode.CustomerCode || "").trim();
+            const fullName = (customerNode.Name || "").trim();
+
+            let customerName = "";
+            if (firstName || lastName) {
+                customerName = [firstName, lastName].filter(Boolean).join(" ");
+            } else if (fullName) {
+                customerName = fullName;
+            }
+
+            const customerParts = [];
+            if (customerName) customerParts.push(`Customer: ${customerName}`);
+            if (customerCode) customerParts.push(`Code: ${customerCode}`);
+            const customerLine = customerParts.join(" | ");
+
             let currentCatalog = "Unknown Catalog";
             let currentBrand = "Unknown Brand";
             const currentAttributes = {};
@@ -459,6 +524,7 @@
 
                     const baseProductName = baseNameParts.filter(Boolean).join(" | ");
                     const jobberDescription = descriptionParts.join("\n");
+                    const finalDescription = customerLine ? `${customerLine}\n${jobberDescription}` : jobberDescription;
                     const signature = simpleHash(`${baseProductName}${jobberDescription}`);
                     const finalProductName = `${baseProductName} | S2J(${signature})`;
                     
@@ -470,7 +536,7 @@
                     finalLineItems.push({
                         name: finalProductName,
                         quantity: quantity * uiQuantity,
-                        description: jobberDescription,
+                        description: finalDescription,
                         unitCost: unitCost,
                         taxable: false,
                         category: "PRODUCT",
@@ -520,6 +586,11 @@
             // Configuration
             itemsPerPage: 5,
             itemsPerCatalogPage: 3,
+
+            // Warning tracking
+            fadingWarnings: [],
+            _warningCache: {},
+            _previousWarningKeys: [],
 
             // --- COMPUTED & GETTERS ---
             get filteredItems() {
@@ -632,13 +703,96 @@
                 return percent.toFixed(1);
             },
 
+            get pricingWarnings() {
+                const warnings = [];
+                for (const catalog of this.activeCatalogs) {
+                    const data = this.catalogPricingData[catalog];
+                    if (!data) continue;
+                    const mult = data.multiplier;
+                    const margin = data.margin;
+                    const displayName = data.brand ? `${data.brand}: ${catalog}` : catalog;
+
+                    if (this.isPricingFactorValid(mult) && mult <= 0) {
+                        warnings.push({
+                            key: `${catalog}-mult-zero`,
+                            level: 'WARNING',
+                            message: `${displayName} — Multiplier is ${mult}. Must be a positive value (e.g. 0.5 means COGS is 50% of MSRP).`
+                        });
+                    } else if (this.isPricingFactorValid(mult) && mult > 1) {
+                        warnings.push({
+                            key: `${catalog}-mult-high`,
+                            level: 'Caution',
+                            message: `${displayName} — Multiplier is ${mult}, so COGS exceeds MSRP. Typical values fall between 0 and 1 (e.g. 0.5 = 50% of list price).`
+                        });
+                    }
+
+                    if (this.isPricingFactorValid(margin) && margin >= 1) {
+                        warnings.push({
+                            key: `${catalog}-margin-high`,
+                            level: 'WARNING',
+                            message: `${displayName} — Margin of ${margin} breaks the pricing formula. Margin must be less than 1 (e.g. 0.25 for a 25% margin).`
+                        });
+                    } else if (this.isPricingFactorValid(margin) && margin < 0) {
+                        warnings.push({
+                            key: `${catalog}-margin-neg`,
+                            level: 'Caution',
+                            message: `${displayName} — Margin is negative (${margin}), meaning the sale price is below cost. Typical values are between 0 and 1 (e.g. 0.25 for 25% margin).`
+                        });
+                    }
+
+                    if (this.isPricingFactorValid(mult) && mult > 0 && this.isPricingFactorValid(margin) && margin < 1) {
+                        const customerPrice = this.calculateCustomerPrice(catalog);
+                        const msrp = this.catalogBaseCosts[catalog] || 0;
+                        if (msrp > 0 && customerPrice > msrp) {
+                            warnings.push({
+                                key: `${catalog}-price-exceeds`,
+                                level: 'WARNING',
+                                message: `${displayName} — Customer price (${this.formatCurrency(customerPrice)}) exceeds MSRP (${this.formatCurrency(msrp)}). The customer will pay above list price with these inputs.`
+                            });
+                        }
+                    }
+                }
+                return warnings;
+            },
+
+            get allDisplayedWarnings() {
+                const active = this.pricingWarnings.map(w => ({...w, fading: false}));
+                const stillFading = this.fadingWarnings.filter(fw => !active.some(aw => aw.key === fw.key));
+                return [...active, ...stillFading];
+            },
+
+            updateWarningFades() {
+                const currentKeys = this.pricingWarnings.map(w => w.key);
+                const previousKeys = this._previousWarningKeys;
+
+                for (const key of previousKeys) {
+                    if (!currentKeys.includes(key) && !this.fadingWarnings.some(w => w.key === key)) {
+                        const cached = this._warningCache[key];
+                        if (cached) {
+                            this.fadingWarnings.push({...cached, fading: true});
+                            setTimeout(() => {
+                                this.fadingWarnings = this.fadingWarnings.filter(w => w.key !== key);
+                            }, 3000);
+                        }
+                    }
+                }
+
+                // If a fading warning reappears, remove it from fading
+                this.fadingWarnings = this.fadingWarnings.filter(w => !currentKeys.includes(w.key));
+
+                for (const w of this.pricingWarnings) {
+                    this._warningCache[w.key] = {...w};
+                }
+                this._previousWarningKeys = [...currentKeys];
+            },
+
             async estimateQuote(item) {
                 if (this.isEstimating) return;
                 
                 const msrp = this.totalMSRP;
                 const discount = this.customerDiscount;
 
-                if (!confirm(`This will update the MSRP and Discount line items on Quote ${item.number} to:\n\nMSRP: ${this.formatCurrency(msrp)}\nDiscount: ${this.formatCurrency(-Math.abs(discount))}\n\nThis action cannot be undone. Proceed?`)) {
+                if (!confirm(`This will update the MSRP and Discount line items on Quote ${item.number} to:\n\nMSRP: ${this.formatCurrency(msrp)}\nDiscount: ${this.formatCurrency(-discount)}\n\nThis action cannot be undone. Proceed?`)) {
                     return;
                 }
 
@@ -674,6 +828,7 @@
                 this.refreshExports();
                 this.$watch('jobberSearchQuery', () => { this.jobberCurrentPage = 1; });
                 this.$watch('saberisSearchQuery', () => { this.saberisCurrentPage = 1; });
+                this.$watch('includedCatalogs', () => { this.updateWarningFades(); });
             },
 
             setJobberItemType(type) {
@@ -726,6 +881,7 @@
                 if (this.saveState === 'clean' || this.saveState === 'saved') {
                     this.saveState = 'dirty';
                 }
+                this.updateWarningFades();
             },
            async updateCatalogsAndCosts() {
                 if (this.isDirty() && (this.saveState === 'clean' || this.saveState === 'saved')) {
@@ -773,6 +929,7 @@
                         this.isFetchingPricing = false;
                     }
                 }
+                this.updateWarningFades();
             },
             calculateCOGS(catalog) {
                 const msrp = this.catalogBaseCosts[catalog] || 0;
