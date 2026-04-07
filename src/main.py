@@ -415,6 +415,65 @@ def clear_s2j_entries_route():
         print(f"ERROR: Could not clear S2J entries: {e}")
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/quote-line-item-names/<string:quote_id>', methods=['GET'])
+def get_quote_line_item_names(quote_id: str):
+    """Returns the names of all line items on a quote, used by the UI to enable/disable send buttons."""
+    if get_valid_access_token() is None:
+        return jsonify({"error": "Not authorized with Jobber"}), 401
+    jobber_client = JobberClient()
+    try:
+        quote_details = jobber_client.get_quote_with_line_items(quote_id)
+        if not quote_details:
+            return jsonify({"error": f"Quote {quote_id} not found"}), 404
+        nodes = quote_details.get("lineItems", {}).get("nodes", [])
+        names = [item['name'] for item in nodes if 'name' in item]
+        return jsonify({"names": names})
+    except Exception as e:
+        print(f"ERROR: Could not fetch line item names for quote {quote_id}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/send-price-only', methods=['POST'])
+def send_price_only():
+    """Updates the 'Made-to-Order Cabinetry Package' line item unit price on a quote."""
+    if get_valid_access_token() is None:
+        return jsonify({"error": "Not authorized with Jobber"}), 401
+
+    data = request.get_json()
+    quote_id = data.get('quoteId')
+    total = data.get('total')
+
+    if not all([quote_id, total is not None]):
+        return jsonify({"error": "Missing quoteId or total"}), 400
+
+    jobber_client = JobberClient()
+    PACKAGE_LINE_ITEM_NAME = "Made-to-Order Cabinetry Package"
+
+    try:
+        quote_details = jobber_client.get_quote_with_line_items(quote_id)
+        if not quote_details:
+            return jsonify({"error": f"Could not find quote with ID: {quote_id}"}), 404
+
+        line_items = quote_details.get("lineItems", {}).get("nodes", [])
+        package_item = next((item for item in line_items if item.get('name') == PACKAGE_LINE_ITEM_NAME), None)
+
+        if not package_item:
+            return jsonify({"error": f"Operation failed. The quote is missing the required line item: '{PACKAGE_LINE_ITEM_NAME}'."}), 400
+
+        items_to_update: List[QuoteEditLineItemInputGQL] = [
+            {"lineItemId": package_item['id'], "unitPrice": total, "quantity": 1}
+        ]
+
+        success, message = jobber_client.update_line_items_on_quote(quote_id, items_to_update)
+
+        if not success:
+            return jsonify({"error": f"Failed to update line item: {message}"}), 500
+
+        return jsonify({"message": "Successfully updated the package price on the quote."})
+
+    except Exception as e:
+        print(f"ERROR: Could not perform send-price-only: {e}")
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/api/estimate-quote', methods=['POST'])
 def estimate_quote():
     """

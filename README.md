@@ -5,7 +5,7 @@ activate virtual env:
 venv\Scripts\activate
 
 
-BURNICH DOCKER BUILD and PUSH:
+BURNICH DOCKER BUILD and PUSH (With Docker Desktop Open:
 
 docker build -t saberis2jobber-app . 
 
@@ -13,11 +13,16 @@ docker tag saberis2jobber-app us-west3-docker.pkg.dev/saberis2jobber-471209/sabe
 
 docker push us-west3-docker.pkg.dev/saberis2jobber-471209/saberis2jobber/app:latest
 
+THEN deploy on the website
 
-ZANYA DOCKER BUILD and PUSH:
+---
+
+ZANYA DOCKER BUILD and PUSH (With Docker Desktop Open):
 
 docker build -t saberis2jobber-app . 
 
 docker tag saberis2jobber-app us-west1-docker.pkg.dev/gen-lang-client-0422691587/saberis2jobber-test/saberis2jobber-app
 
 docker push us-west1-docker.pkg.dev/gen-lang-client-0422691587/saberis2jobber-test/saberis2jobber-app
+
+THEN deploy on the website

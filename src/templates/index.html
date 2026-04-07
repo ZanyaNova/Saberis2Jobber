@@ -148,32 +148,13 @@
                                     <small class="exported-by-label" x-text="`Status: ${item.status}`"></small>
                                     <div x-show="selectedItemId === item.id" style="margin-top: 1rem;">
                                         <div style="display: flex; gap: 1rem;">
-                                            <button 
-                                                x-show="item.type === 'Quote'"
-                                                @click.stop="estimateQuote(item)" 
-                                                class="btn-small" 
-                                                style="width: 100%;" 
-                                                :aria-busy="isEstimating"
-                                                title="Fill in MSRP and discount line items for quote. Quote must be from a template (or at least have MSRP and discount line items with exact matching titles)">
-                                                Fill MSRP, Discount
-                                            </button>
-                                            <button 
-                                                @click.stop="clearS2JEntries(item)" 
+                                            <button
+                                                @click.stop="clearS2JEntries(item)"
                                                 x-show="item.type === 'Job'"
-                                                class="secondary outline btn-small" 
-                                                style="width: 100%;" 
-                                                title="Remove all S2J entries from the Jobber job/quote">
+                                                class="secondary outline btn-small"
+                                                style="width: 100%;"
+                                                title="Remove all S2J entries from the Jobber job">
                                                 Clear
-                                            </button>
-                                            <button 
-                                                @click="sendToJobber()" 
-                                                x-show="item.type === 'Job'"
-                                                class="btn-small" 
-                                                :disabled="!isReadyToSend() || isSending" 
-                                                :aria-busy="isSending", 
-                                                style="width: 100%;" 
-                                                title="Add cabinets from the seleceted Saberis Exports and catalogs">
-                                                Add
                                             </button>
                                         </div>
                                     </div>
@@ -205,6 +186,75 @@
                             <small class="currency-line subtle-line" >Customer Discount: <strong x-text="formatCurrency(customerDiscount)" :class="{ 'positive-discount': customerDiscount > 0 }"></strong></small>
                             <small class="currency-line subtle-line">Discount %: <strong x-text="`${customerDiscountPercent}%`" :class="{ 'positive-discount': customerDiscount > 0 }"></strong></small>
                         </footer>
+                    </article>
+                    <!-- Quote Actions -->
+                    <article x-show="!selectedIsJob">
+                        <header style="padding-bottom: 0.5rem; margin-bottom: 0.75rem; border-bottom: 1px solid var(--pico-muted-border-color);">
+                            <strong>Quote Actions</strong>
+                            <small style="float: right; color: var(--pico-muted-color);" x-text="selectedItem ? selectedItem.number : ''"></small>
+                        </header>
+
+                        <div class="action-block">
+                            <button
+                                @click="sendMsrpDiscount()"
+                                :disabled="!canSendMsrpDiscount || isSendingMsrpDiscount || isFetchingLineItemNames"
+                                :aria-busy="isSendingMsrpDiscount"
+                                style="width: 100%; margin: 0;">
+                                Send MSRP &amp; Discount
+                            </button>
+                            <ul class="criteria-list" :aria-busy="isFetchingLineItemNames && selectedIsQuote">
+                                <template x-for="c in msrpDiscountCriteria" :key="c.text">
+                                    <li :class="`criteria-item criteria-${c.state}`">
+                                        <span class="criteria-icon" x-text="c.state === 'met' ? '✓' : c.state === 'failed' ? '✗' : '○'"></span>
+                                        <span x-text="c.text"></span>
+                                    </li>
+                                </template>
+                            </ul>
+                        </div>
+
+                        <div class="action-block">
+                            <button
+                                @click="sendPriceOnly()"
+                                :disabled="!canSendPriceOnly || isSendingPriceOnly || isFetchingLineItemNames"
+                                :aria-busy="isSendingPriceOnly"
+                                style="width: 100%; margin: 0;">
+                                Send Price Only
+                            </button>
+                            <ul class="criteria-list">
+                                <template x-for="c in priceOnlyCriteria" :key="c.text">
+                                    <li :class="`criteria-item criteria-${c.state}`">
+                                        <span class="criteria-icon" x-text="c.state === 'met' ? '✓' : c.state === 'failed' ? '✗' : '○'"></span>
+                                        <span x-text="c.text"></span>
+                                    </li>
+                                </template>
+                            </ul>
+                        </div>
+                    </article>
+
+                    <!-- Job Actions -->
+                    <article x-show="selectedIsJob">
+                        <header style="padding-bottom: 0.5rem; margin-bottom: 0.75rem; border-bottom: 1px solid var(--pico-muted-border-color);">
+                            <strong>Job Actions</strong>
+                            <small style="float: right; color: var(--pico-muted-color);" x-text="selectedItem ? selectedItem.number : ''"></small>
+                        </header>
+
+                        <div class="action-block">
+                            <button
+                                @click="sendLineItems()"
+                                :disabled="!canSendLineItems || isSendingLineItems"
+                                :aria-busy="isSendingLineItems"
+                                style="width: 100%; margin: 0;">
+                                Send Line Items
+                            </button>
+                            <ul class="criteria-list">
+                                <template x-for="c in lineItemsCriteria" :key="c.text">
+                                    <li :class="`criteria-item criteria-${c.state}`">
+                                        <span class="criteria-icon" x-text="c.state === 'met' ? '✓' : c.state === 'failed' ? '✗' : '○'"></span>
+                                        <span x-text="c.text"></span>
+                                    </li>
+                                </template>
+                            </ul>
+                        </div>
                     </article>
                 </aside>
             </div>
@@ -264,6 +314,8 @@
     }
     aside {
         padding-left: var(--pico-spacing);
+        overflow-y: auto;
+        max-height: 100vh;
     }
     .auth-error-card {
         border-left-width: 0.5rem;
@@ -408,6 +460,43 @@
 
     [x-cloak] {
         display: none !important;
+    }
+    .action-block {
+        margin-bottom: 1rem;
+    }
+    .action-block:last-child {
+        margin-bottom: 0;
+    }
+    .criteria-list {
+        list-style: none;
+        margin: 0.35rem 0 0 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.2rem;
+    }
+    .criteria-item {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        font-size: 0.8em;
+        line-height: 1.3;
+    }
+    .criteria-icon {
+        flex-shrink: 0;
+        width: 1em;
+        text-align: center;
+        font-size: 1em;
+        color: inherit;
+    }
+    .criteria-pending {
+        color: var(--pico-muted-color);
+    }
+    .criteria-met {
+        color: var(--pico-color-green-500);
+    }
+    .criteria-failed {
+        color: var(--pico-color-red-500);
     }
 </style>
 
@@ -558,6 +647,11 @@
             isAuthorizing: false,
             isFetchingPricing: false,
             isEstimating: false,
+            isFetchingLineItemNames: false,
+            isSendingMsrpDiscount: false,
+            isSendingPriceOnly: false,
+            isSendingLineItems: false,
+            selectedQuoteLineItemNames: [],
 
             // Jobber
             jobberAuthStatus: 'checking',
@@ -660,6 +754,65 @@
             },
             isReadyToSend() {
                 return this.isSelectionComplete() && this.selectedItemId !== null && this.arePricingFactorsValid();
+            },
+            get selectedItem() {
+                return this.jobberItems.find(item => item.id === this.selectedItemId) || null;
+            },
+            get canSendLineItems() {
+                return this.isReadyToSend() && this.selectedItem?.type === 'Job';
+            },
+            get canSendMsrpDiscount() {
+                if (!this.isReadyToSend()) return false;
+                if (this.selectedItem?.type !== 'Quote') return false;
+                const names = this.selectedQuoteLineItemNames;
+                return names.includes('Made-to-Order Cabinetry - MSRP') &&
+                       names.includes('Made-to-Order Cabinetry \u2013 Sale Discount');
+            },
+            get canSendPriceOnly() {
+                if (!this.isReadyToSend()) return false;
+                if (this.selectedItem?.type !== 'Quote') return false;
+                return this.selectedQuoteLineItemNames.includes('Made-to-Order Cabinetry Package');
+            },
+            get selectedIsQuote() { return this.selectedItem?.type === 'Quote'; },
+            get selectedIsJob() { return this.selectedItem?.type === 'Job'; },
+            get hasMsrpLineItem() { return this.selectedQuoteLineItemNames.includes('Made-to-Order Cabinetry - MSRP'); },
+            get hasDiscountLineItem() { return this.selectedQuoteLineItemNames.includes('Made-to-Order Cabinetry \u2013 Sale Discount'); },
+            get hasPackageLineItem() { return this.selectedQuoteLineItemNames.includes('Made-to-Order Cabinetry Package'); },
+
+            // Returns an array of {state, text} objects for each button's checklist.
+            // state: 'pending' (prereq not yet reachable), 'met' (green ✓), 'failed' (red ✗)
+            _criterion(state, metText, failedText, pendingText) {
+                return {
+                    state,
+                    text: state === 'met' ? metText : state === 'failed' ? failedText : pendingText
+                };
+            },
+            get msrpDiscountCriteria() {
+                const noSel = !this.selectedItem;
+                return [
+                    this._criterion(noSel ? 'pending' : this.selectedIsQuote ? 'met' : 'failed',
+                        'Quote selected', 'Need a quote (job is selected)', 'Select a quote'),
+                    this._criterion(!this.selectedIsQuote ? 'pending' : this.hasMsrpLineItem ? 'met' : 'failed',
+                        'MSRP line item detected', 'MSRP line item – missing', 'MSRP line item'),
+                    this._criterion(!this.selectedIsQuote ? 'pending' : this.hasDiscountLineItem ? 'met' : 'failed',
+                        'Discount line item detected', 'Discount line item – missing', 'Discount line item'),
+                ];
+            },
+            get priceOnlyCriteria() {
+                const noSel = !this.selectedItem;
+                return [
+                    this._criterion(noSel ? 'pending' : this.selectedIsQuote ? 'met' : 'failed',
+                        'Quote selected', 'Need a quote (job is selected)', 'Select a quote'),
+                    this._criterion(!this.selectedIsQuote ? 'pending' : this.hasPackageLineItem ? 'met' : 'failed',
+                        'Package line item detected', 'Package line item – missing', 'Package line item'),
+                ];
+            },
+            get lineItemsCriteria() {
+                const noSel = !this.selectedItem;
+                return [
+                    this._criterion(noSel ? 'pending' : this.selectedIsJob ? 'met' : 'failed',
+                        'Job selected', 'Need a job (quote is selected)', 'Select a job'),
+                ];
             },
             nearlyEquals(a, b, epsilon = 0.001) {
                 const absA = Math.abs(a);
@@ -829,6 +982,7 @@
                 this.$watch('jobberSearchQuery', () => { this.jobberCurrentPage = 1; });
                 this.$watch('saberisSearchQuery', () => { this.saberisCurrentPage = 1; });
                 this.$watch('includedCatalogs', () => { this.updateWarningFades(); });
+                this.$watch('selectedItemId', (newId) => { this.onSelectedItemChanged(newId); });
             },
 
             setJobberItemType(type) {
@@ -1069,6 +1223,81 @@
                     alert(`An error occurred: ${error.message}`);
                 } finally {
                     this.isLoading = false;
+                }
+            },
+
+            async onSelectedItemChanged(newId) {
+                this.selectedQuoteLineItemNames = [];
+                if (!newId) return;
+                const item = this.jobberItems.find(i => i.id === newId);
+                if (!item || item.type !== 'Quote') return;
+                this.isFetchingLineItemNames = true;
+                try {
+                    const response = await fetch(`/api/quote-line-item-names/${newId}`);
+                    if (!response.ok) return;
+                    const data = await response.json();
+                    this.selectedQuoteLineItemNames = data.names || [];
+                } catch (error) {
+                    console.error("Error fetching quote line item names:", error);
+                } finally {
+                    this.isFetchingLineItemNames = false;
+                }
+            },
+
+            async sendMsrpDiscount() {
+                if (!this.canSendMsrpDiscount || this.isSendingMsrpDiscount) return;
+                const item = this.selectedItem;
+                const msrp = this.totalMSRP;
+                const discount = this.customerDiscount;
+                if (!confirm(`This will update the MSRP and Discount line items on Quote ${item.number} to:\n\nMSRP: ${this.formatCurrency(msrp)}\nDiscount: ${this.formatCurrency(-discount)}\n\nThis action cannot be undone. Proceed?`)) return;
+                this.isSendingMsrpDiscount = true;
+                try {
+                    const response = await fetch('/api/estimate-quote', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ quoteId: item.id, msrp, discount }),
+                    });
+                    const result = await response.json();
+                    if (!response.ok) throw new Error(result.error || `HTTP error! status: ${response.status}`);
+                    alert(result.message || 'Successfully updated the quote.');
+                } catch (error) {
+                    console.error("Error sending MSRP & Discount:", error);
+                    alert(`An error occurred: ${error.message}`);
+                } finally {
+                    this.isSendingMsrpDiscount = false;
+                }
+            },
+
+            async sendPriceOnly() {
+                if (!this.canSendPriceOnly || this.isSendingPriceOnly) return;
+                const item = this.selectedItem;
+                const total = this.grandTotal;
+                if (!confirm(`This will set the package price on Quote ${item.number} to ${this.formatCurrency(total)}.\n\nThis action cannot be undone. Proceed?`)) return;
+                this.isSendingPriceOnly = true;
+                try {
+                    const response = await fetch('/api/send-price-only', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ quoteId: item.id, total }),
+                    });
+                    const result = await response.json();
+                    if (!response.ok) throw new Error(result.error || `HTTP error! status: ${response.status}`);
+                    alert(result.message || 'Successfully updated the quote.');
+                } catch (error) {
+                    console.error("Error sending price only:", error);
+                    alert(`An error occurred: ${error.message}`);
+                } finally {
+                    this.isSendingPriceOnly = false;
+                }
+            },
+
+            async sendLineItems() {
+                if (!this.canSendLineItems || this.isSendingLineItems) return;
+                this.isSendingLineItems = true;
+                try {
+                    await this.sendToJobber();
+                } finally {
+                    this.isSendingLineItems = false;
                 }
             },
 
