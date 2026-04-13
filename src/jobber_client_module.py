@@ -454,16 +454,15 @@ class JobberClient:
             print(f"ERROR: A network request to Jobber API failed for {log_query_identifier} ({error_type_name}): {e}")
             raise
     
-    def get_all_products_and_services(self) -> List[Dict[str, str]]:
+    def get_all_products_and_services(self) -> List[Dict[str, Any]]:
         """
         Fetches all products and services from Jobber, handling pagination.
-        Returns a list of dictionaries, each with 'id' and 'name'.
+        Returns a list of dictionaries, each with 'id', 'name', and 'internalUnitCost'.
         """
         print("INFO: Fetching all products and services from Jobber...")
-        all_products: List[Dict[str, str]] = []
+        all_products: List[Dict[str, Any]] = []
         cursor: Optional[str] = None
-        
-        # CORRECTED: Changed 'productsAndServices' to 'productOrServices'
+
         query = """
         query GetAllProducts($cursor: String) {
           productOrServices(first: 250, after: $cursor) {
@@ -472,6 +471,7 @@ class JobberClient:
               node {
                 id
                 name
+                internalUnitCost
               }
             }
             pageInfo {
@@ -485,17 +485,17 @@ class JobberClient:
             try:
                 variables = {"cursor": cursor} if cursor else {}
                 raw_data = self._post(query, variables)
-                
-                # CORRECTED: Changed key to 'productOrServices'
+
                 connection = raw_data.get("productOrServices", {})
                 edges = connection.get("edges", [])
-                
+
                 for edge in edges:
                     node = edge.get("node")
                     if node and node.get("id") and node.get("name"):
                         all_products.append({
                             "id": node["id"],
-                            "name": node["name"]
+                            "name": node["name"],
+                            "internalUnitCost": node.get("internalUnitCost"),
                         })
 
                 page_info = connection.get("pageInfo", {})
@@ -669,9 +669,13 @@ class JobberClient:
         # Step 1: Check against the provided list instead of making a new API call.
         existing_product = next((p for p in existing_products if p['name'] == product_name), None)
 
-        # Step 2: Update existing product if cost differs
+        # Step 2: Update existing product only if cost has changed
         if existing_product:
-            # (Your existing update logic here remains the same)
+            existing_cost = existing_product.get('internalUnitCost')
+            if existing_cost is not None and abs(float(existing_cost) - float(unit_cost)) < 0.001:
+                print(f"INFO: Skipping update for '{product_name}' — cost unchanged ({unit_cost}).")
+                return True, f"No update needed for '{product_name}'."
+
             mutation = """
             mutation ProductsAndServicesEdit($productOrServiceId: EncodedId!, $input: ProductsAndServicesEditInput!) {
             productsAndServicesEdit(productOrServiceId: $productOrServiceId, input: $input) {

@@ -55,6 +55,11 @@
                                     </article>
                                 </template>
                             </div>
+                            <div x-show="itemsPerPage < 50" style="text-align: right; margin-top: 0.5rem;">
+                                <button @click="itemsPerPage = 50; saberisCurrentPage = 1" class="outline" style="padding: 2px 8px; font-size: 0.8em;">
+                                    50 Per Page
+                                </button>
+                            </div>
                             <div x-show="totalSaberisPages > 1" class="pagination-controls">
                                 <button @click="saberisCurrentPage--" :disabled="saberisCurrentPage === 1">&lt; Prev</button>
                                 <span x-text="`Page ${saberisCurrentPage} of ${totalSaberisPages}`"></span>
@@ -254,6 +259,17 @@
                                     </li>
                                 </template>
                             </ul>
+                        </div>
+
+                        <div class="action-block">
+                            <button
+                                @click="clearS2JEntries(selectedItem)"
+                                :disabled="!selectedItem || isSending"
+                                :aria-busy="isSending"
+                                class="secondary"
+                                style="width: 100%; margin: 0;">
+                                Clear All S2J Items
+                            </button>
                         </div>
                     </article>
                 </aside>
@@ -1193,6 +1209,10 @@
                         headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify(payload),
                     });
+                    const contentType = response.headers.get('content-type') || '';
+                    if (!contentType.includes('application/json')) {
+                        throw new Error(`Server returned a non-JSON response (status ${response.status}). The request may have timed out — check the server logs.`);
+                    }
                     const result = await response.json();
                     if (!response.ok) {
                         throw new Error(result.error || `HTTP error! status: ${response.status}`);
