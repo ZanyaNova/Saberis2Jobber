@@ -664,6 +664,11 @@ class JobberClient:
         """
         Creates or updates a ProductOrService item in Jobber using a pre-fetched list.
         """
+        # Jobber rejects internalUnitCost with more than 6 decimal places, and a raw
+        # float cost/multiplier product can easily exceed that. Clamp it here so the
+        # API contract does not depend on the caller having rounded.
+        unit_cost = round(float(unit_cost), 6)
+
         print(f"INFO: Checking/updating ProductOrService '{product_name}' with cost {unit_cost}.")
 
         # Step 1: Check against the provided list instead of making a new API call.

@@ -78,14 +78,7 @@
                 <section :class="{ 'content-hidden': !isSelectionComplete() }">
                     <div class="column-header">
                         <div></div>
-                        <h3 class="column-title">
-                            Pricing
-                            <span style="font-size: 0.8em; font-weight: normal; min-width: 60px; text-align: right; display: inline-block;">
-                                <button x-show="saveState === 'dirty'" @click="savePricingFactors()" style="padding: 5px 10px; font-size: 1em; font-weight: bold; margin: 0;">Save</button>
-                                <span x-show="saveState === 'saving'" aria-busy="true" style="font-size: smaller;">Saving...</span>
-                                <span x-show="saveState === 'saved'" style="color: green; font-size: smaller;">Saved!</span>
-                            </span>
-                        </h3>
+                        <h3 class="column-title">Pricing</h3>
                     </div>
                     <template x-if="isFetchingPricing">
                         <article aria-busy="true">Fetching saved pricing data...</article>
@@ -103,11 +96,44 @@
                                             </label>
                                         </div>
                                     </header>
-                                    <div class="pricing-inputs">
-                                        <label :for="'multiplier-' + catalog">Mult</label>
-                                        <input :id="'multiplier-' + catalog" type="number" step="0.01" class="input-small" x-model.number="catalogPricingData[catalog].multiplier" @input="onPricingInputChange()" :aria-invalid="!isPricingFactorValid(catalogPricingData[catalog]?.multiplier)">
-                                        <label :for="'margin-' + catalog">Margin</label>
-                                        <input :id="'margin-' + catalog" type="number" step="0.01" class="input-small" x-model.number="catalogPricingData[catalog].margin" @input="onPricingInputChange()" placeholder="e.g. 0.25" :aria-invalid="!isPricingFactorValid(catalogPricingData[catalog]?.margin)">
+                                    <div class="preset-row">
+                                        <select class="preset-select"
+                                                :value="catalogSelectedPresetIndex[catalog] ?? ''"
+                                                @change="catalogSelectedPresetIndex[catalog] = $event.target.value === '' ? null : parseInt($event.target.value); onPresetSelected(catalog)"
+                                                :disabled="catalogShowNewValue[catalog]">
+                                            <option value=""
+                                                    :disabled="(catalogPresets[catalog] || []).length === 0"
+                                                    x-text="(catalogPresets[catalog] || []).length === 0 ? 'No saved presets' : '— none —'"></option>
+                                            <template x-for="(preset, index) in (catalogPresets[catalog] || [])" :key="index">
+                                                <option :value="index" x-text="`${preset.multiplier} / ${preset.margin}`"></option>
+                                            </template>
+                                        </select>
+                                        <button class="btn-trash"
+                                                x-show="catalogSelectedPresetIndex[catalog] !== null && catalogSelectedPresetIndex[catalog] !== undefined"
+                                                @click="deleteSelectedPreset(catalog)"
+                                                title="Delete this preset">🗑</button>
+                                        <button class="btn-new-value outline"
+                                                x-show="!catalogShowNewValue[catalog]"
+                                                @click="openNewValue(catalog)">+ New</button>
+                                    </div>
+                                    <div class="new-value-form" x-show="catalogShowNewValue[catalog]">
+                                        <div class="new-value-inputs">
+                                            <label>Mult</label>
+                                            <input type="number" step="0.01" class="input-small"
+                                                   x-model.number="catalogNewMult[catalog]"
+                                                   @input="onNewValueChange(catalog)">
+                                            <label>Margin</label>
+                                            <input type="number" step="0.01" class="input-small"
+                                                   x-model.number="catalogNewMargin[catalog]"
+                                                   @input="onNewValueChange(catalog)"
+                                                   placeholder="e.g. 0.25">
+                                        </div>
+                                        <div class="new-value-actions">
+                                            <button :disabled="isNewPresetSaveDisabled(catalog) || catalogIsSavingPreset[catalog]"
+                                                    @click="saveNewPreset(catalog)"
+                                                    x-text="getNewPresetSaveLabel(catalog)">Save</button>
+                                            <button class="secondary outline" @click="cancelNewValue(catalog)">Cancel</button>
+                                        </div>
                                     </div>
                                     <hr class="card-separator">
                                     <div class="cost-details">
@@ -397,10 +423,68 @@
         justify-content: space-between;
         align-items: center;
     }
-    .is-ignored .pricing-inputs,
+    .is-ignored .preset-row,
+    .is-ignored .new-value-form,
     .is-ignored .card-separator,
     .is-ignored .cost-details {
         display: none;
+    }
+    .preset-row {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+    }
+    .preset-select {
+        flex: 1;
+        margin-bottom: 0;
+        font-size: small;
+        padding: 0.3rem 0.5rem;
+        min-width: 0;
+    }
+    .btn-trash {
+        background: none;
+        border: none;
+        cursor: pointer;
+        color: var(--pico-color-red-500);
+        font-size: 1rem;
+        padding: 0.2rem 0.3rem;
+        line-height: 1;
+        flex-shrink: 0;
+    }
+    .btn-trash:hover { opacity: 0.7; }
+    .btn-new-value {
+        font-size: small;
+        padding: 0.3rem 0.6rem;
+        white-space: nowrap;
+        flex-shrink: 0;
+        margin-bottom: 0;
+    }
+    .new-value-form {
+        margin-top: 0.5rem;
+    }
+    .new-value-inputs {
+        display: grid;
+        grid-template-columns: auto 1fr auto 1fr;
+        gap: 0.5rem 0.75rem;
+        align-items: center;
+        margin-bottom: 0.5rem;
+    }
+    .new-value-inputs label {
+        margin-bottom: 0;
+        font-size: small;
+    }
+    .new-value-inputs input {
+        margin-bottom: 0;
+    }
+    .new-value-actions {
+        display: flex;
+        gap: 0.4rem;
+    }
+    .new-value-actions button {
+        flex: 1;
+        font-size: small;
+        padding: 0.3rem 0.6rem;
+        margin-bottom: 0;
     }
     .include-toggle label {
         display: flex;
@@ -635,7 +719,10 @@
                     
                     const itemCost = parseFloat(String(item.Cost || 0));
                     const multiplier = catalogMultipliers[currentCatalog] || 1.0;
-                    const unitCost = itemCost * multiplier;
+                    // Round to cents — the raw float product can carry precision noise
+                    // (145.32 * 1.15 = 167.11799999999997) and Jobber rejects
+                    // internalUnitCost with more than 6 decimal places.
+                    const unitCost = Math.round(itemCost * multiplier * 100) / 100;
                     const quantity = parseFloat(String(item.Quantity || 1));
 
                     finalLineItems.push({
@@ -689,8 +776,12 @@
             uniqueCatalogs: [],
             catalogPricingData: {},
             catalogBaseCosts: {},
-            originalCatalogPricingData: {},
-            saveState: 'clean',
+            catalogPresets: {},
+            catalogSelectedPresetIndex: {},
+            catalogShowNewValue: {},
+            catalogNewMult: {},
+            catalogNewMargin: {},
+            catalogIsSavingPreset: {},
             catalogCurrentPage: 1,
 
             // Configuration
@@ -837,16 +928,6 @@
                 if (a === b) return true;
                 if (a === 0 || b === 0 || (absA + absB < Number.MIN_VALUE)) return diff < (epsilon * Number.MIN_VALUE);
                 return diff / (absA + absB) < epsilon;
-            },
-            isDirty() {
-                if (Object.keys(this.catalogPricingData).length !== Object.keys(this.originalCatalogPricingData).length) return true;
-                for (const catalog in this.catalogPricingData) {
-                    const current = this.catalogPricingData[catalog];
-                    const original = this.originalCatalogPricingData[catalog];
-                    if (!original) return true;
-                    if (!this.nearlyEquals(current.multiplier, original.multiplier) || !this.nearlyEquals(current.margin, original.margin)) return true;
-                }
-                return false;
             },
             get activeCatalogs() {
                 return this.includedCatalogs;
@@ -1047,16 +1128,123 @@
                 this.quantities[saberisId] = parseInt(value, 10);
                 this.updateCatalogsAndCosts();
             },
-            onPricingInputChange() {
-                if (this.saveState === 'clean' || this.saveState === 'saved') {
-                    this.saveState = 'dirty';
+            onPresetSelected(catalog) {
+                const index = this.catalogSelectedPresetIndex[catalog];
+                if (index === null || index === undefined) {
+                    this.catalogPricingData[catalog].multiplier = null;
+                    this.catalogPricingData[catalog].margin = null;
+                } else {
+                    const preset = this.catalogPresets[catalog][index];
+                    this.catalogPricingData[catalog].multiplier = preset.multiplier;
+                    this.catalogPricingData[catalog].margin = preset.margin;
                 }
                 this.updateWarningFades();
             },
-           async updateCatalogsAndCosts() {
-                if (this.isDirty() && (this.saveState === 'clean' || this.saveState === 'saved')) {
-                    this.saveState = 'dirty';
+            onNewValueChange(catalog) {
+                const mult = this.catalogNewMult[catalog];
+                const margin = this.catalogNewMargin[catalog];
+                this.catalogPricingData[catalog].multiplier = this.isPricingFactorValid(mult) ? mult : null;
+                this.catalogPricingData[catalog].margin = this.isPricingFactorValid(margin) ? margin : null;
+                this.updateWarningFades();
+            },
+            openNewValue(catalog) {
+                this.catalogShowNewValue[catalog] = true;
+                this.catalogNewMult[catalog] = null;
+                this.catalogNewMargin[catalog] = null;
+                this.catalogPricingData[catalog].multiplier = null;
+                this.catalogPricingData[catalog].margin = null;
+            },
+            cancelNewValue(catalog) {
+                this.catalogShowNewValue[catalog] = false;
+                this.catalogNewMult[catalog] = null;
+                this.catalogNewMargin[catalog] = null;
+                const index = this.catalogSelectedPresetIndex[catalog];
+                if (index !== null && index !== undefined) {
+                    const preset = this.catalogPresets[catalog]?.[index];
+                    if (preset) {
+                        this.catalogPricingData[catalog].multiplier = preset.multiplier;
+                        this.catalogPricingData[catalog].margin = preset.margin;
+                        this.updateWarningFades();
+                        return;
+                    }
                 }
+                this.catalogPricingData[catalog].multiplier = null;
+                this.catalogPricingData[catalog].margin = null;
+                this.updateWarningFades();
+            },
+            isPresetDuplicate(catalog, mult, margin) {
+                if (!this.isPricingFactorValid(mult) || !this.isPricingFactorValid(margin)) return false;
+                return (this.catalogPresets[catalog] || []).some(p =>
+                    this.nearlyEquals(p.multiplier, mult) && this.nearlyEquals(p.margin, margin)
+                );
+            },
+            isNewPresetSaveDisabled(catalog) {
+                const mult = this.catalogNewMult[catalog];
+                const margin = this.catalogNewMargin[catalog];
+                if (!this.isPricingFactorValid(mult) || !this.isPricingFactorValid(margin)) return true;
+                return this.isPresetDuplicate(catalog, mult, margin);
+            },
+            getNewPresetSaveLabel(catalog) {
+                const mult = this.catalogNewMult[catalog];
+                const margin = this.catalogNewMargin[catalog];
+                if (this.isPricingFactorValid(mult) && this.isPricingFactorValid(margin) && this.isPresetDuplicate(catalog, mult, margin)) {
+                    return 'Saved';
+                }
+                return 'Save';
+            },
+            async saveNewPreset(catalog) {
+                this.catalogIsSavingPreset[catalog] = true;
+                const mult = this.catalogNewMult[catalog];
+                const margin = this.catalogNewMargin[catalog];
+                try {
+                    const response = await fetch('/api/catalog-preset', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({catalog_id: catalog, multiplier: mult, margin: margin}),
+                    });
+                    if (!response.ok) {
+                        const result = await response.json();
+                        throw new Error(result.error || 'Failed to save preset');
+                    }
+                    this.catalogPresets[catalog] = [...(this.catalogPresets[catalog] || []), {multiplier: mult, margin: margin}];
+                    const newIndex = this.catalogPresets[catalog].length - 1;
+                    this.catalogSelectedPresetIndex[catalog] = newIndex;
+                    this.catalogPricingData[catalog].multiplier = mult;
+                    this.catalogPricingData[catalog].margin = margin;
+                    this.catalogShowNewValue[catalog] = false;
+                    this.catalogNewMult[catalog] = null;
+                    this.catalogNewMargin[catalog] = null;
+                } catch (error) {
+                    alert(`Failed to save preset: ${error.message}`);
+                } finally {
+                    this.catalogIsSavingPreset[catalog] = false;
+                }
+            },
+            async deleteSelectedPreset(catalog) {
+                const index = this.catalogSelectedPresetIndex[catalog];
+                if (index === null || index === undefined) return;
+                const preset = this.catalogPresets[catalog][index];
+                if (!confirm(`Delete preset ${preset.multiplier} / ${preset.margin} for ${catalog}?`)) return;
+                try {
+                    const response = await fetch('/api/catalog-preset', {
+                        method: 'DELETE',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({catalog_id: catalog, multiplier: preset.multiplier, margin: preset.margin}),
+                    });
+                    if (!response.ok) {
+                        const result = await response.json();
+                        throw new Error(result.error || 'Failed to delete preset');
+                    }
+                    this.catalogPresets[catalog] = this.catalogPresets[catalog].filter((_, i) => i !== index);
+                    this.catalogSelectedPresetIndex[catalog] = null;
+                    this.catalogPricingData[catalog].multiplier = null;
+                    this.catalogPricingData[catalog].margin = null;
+                    this.updateWarningFades();
+                } catch (error) {
+                    alert(`Failed to delete preset: ${error.message}`);
+                }
+            },
+           async updateCatalogsAndCosts() {
                 if (!this.isSelectionComplete()) {
                     this.uniqueCatalogs = [];
                     this.catalogBaseCosts = {};
@@ -1076,7 +1264,7 @@
                 this.uniqueCatalogs = Array.from(newUniqueCatalogs).sort();
                 this.includedCatalogs = [...this.uniqueCatalogs];
                 this.catalogBaseCosts = newBaseCosts;
-                const catalogsToFetch = this.uniqueCatalogs.filter(catalog => this.originalCatalogPricingData[catalog] === undefined);
+                const catalogsToFetch = this.uniqueCatalogs.filter(catalog => this.catalogPresets[catalog] === undefined);
                 if (catalogsToFetch.length > 0) {
                     this.isFetchingPricing = true;
                     try {
@@ -1087,10 +1275,14 @@
                         results.forEach(result => {
                             if (result.status === 'fulfilled') {
                                 const item = result.value;
-                                this.catalogPricingData[item.catalog_id] = { ...item
+                                this.catalogPresets[item.catalog_id] = item.presets || [];
+                                const firstPreset = item.presets && item.presets.length > 0 ? item.presets[0] : null;
+                                this.catalogPricingData[item.catalog_id] = {
+                                    brand: item.brand || null,
+                                    multiplier: firstPreset ? firstPreset.multiplier : null,
+                                    margin: firstPreset ? firstPreset.margin : null,
                                 };
-                                this.originalCatalogPricingData[item.catalog_id] = { ...item
-                                };
+                                this.catalogSelectedPresetIndex[item.catalog_id] = firstPreset ? 0 : null;
                             } else {
                                 console.error(result.reason);
                             }
@@ -1130,39 +1322,6 @@
                 return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
             },
 
-            async savePricingFactors() {
-                this.saveState = 'saving';
-                const payload = {};
-                for (const catalog of this.uniqueCatalogs) {
-                    const current = this.catalogPricingData[catalog];
-                    const original = this.originalCatalogPricingData[catalog];
-                    if (!original || !this.nearlyEquals(current.multiplier, original.multiplier) || !this.nearlyEquals(current.margin, original.margin)) {
-                        payload[catalog] = { multiplier: current.multiplier, margin: current.margin };
-                    }
-                }
-                if (Object.keys(payload).length === 0) {
-                    this.saveState = 'clean';
-                    return;
-                }
-                try {
-                    const response = await fetch('/api/catalog-items', {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify(payload),
-                    });
-                    const result = await response.json();
-                    if (!response.ok) throw new Error(result.error || 'Failed to save pricing factors.');
-                    result.saved_items.forEach(item => {
-                        this.originalCatalogPricingData[item.catalog_id] = { ...item };
-                        this.catalogPricingData[item.catalog_id] = { ...item };
-                    });
-                    this.saveState = 'saved';
-                } catch (error) {
-                    console.error("Error saving pricing factors:", error);
-                    alert(`Save failed: ${error.message}`);
-                    this.saveState = 'dirty';
-                }
-            },
             async sendToJobber() {
                 if (this.isSending) return;
                 if (!this.isReadyToSend()) {

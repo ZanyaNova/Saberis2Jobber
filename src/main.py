@@ -2,7 +2,6 @@ import os
 import requests
 from flask import Flask, request, redirect, url_for, render_template, jsonify, Response
 from .gsheet.catalog_manager import catalog_manager
-from dataclasses import asdict
 from .saberis_ingestion import ingest_saberis_exports, SaberisExportRecord
 
 # Auth and Config
@@ -319,72 +318,46 @@ def send_to_jobber():
 
 @app.route('/api/catalog-item/<string:catalog_id>', methods=['GET'])
 def get_catalog_item(catalog_id: str) -> Union[Response, Tuple[Response, int]]:
-    """
-    API endpoint to get all data for a specific catalog item.
-    """
     try:
-        item = catalog_manager.get_catalog_item(catalog_id)
-        if item:
-            # asdict converts the CatalogItem object to a dictionary
-            return jsonify(asdict(item))
-        else:
-            # If not found, return a 404
-            return jsonify({"error": "Item not found", "catalog_id": catalog_id}), 404
-
+        data = catalog_manager.get_catalog_data(catalog_id)
+        return jsonify(data)
     except Exception as e:
         print(f"ERROR: Could not fetch item for {catalog_id}: {e}")
         return jsonify({"error": "An internal error occurred"}), 500
 
-@app.route('/api/catalog-items', methods=['POST'])
-def save_catalog_items() -> Union[Response, Tuple[Response, int]]:
-    """
-    API endpoint to save pricing factors for multiple catalog items.
-    Returns the updated state of the successfully saved items.
-    """
+@app.route('/api/catalog-preset', methods=['POST'])
+def add_catalog_preset() -> Union[Response, Tuple[Response, int]]:
     data: Any = request.get_json()
-    
     if not isinstance(data, dict):
-        return jsonify({"error": "Invalid payload format. Expected a JSON object."}), 400
+        return jsonify({"error": "Invalid payload"}), 400
+    try:
+        payload = cast(Dict[str, Any], data)
+        catalog_id = str(payload['catalog_id'])
+        multiplier = float(payload['multiplier'])
+        margin = float(payload['margin'])
+    except (KeyError, TypeError, ValueError):
+        return jsonify({"error": "Invalid data"}), 400
+    success = catalog_manager.add_catalog_preset(catalog_id, multiplier, margin)
+    if success:
+        return jsonify({"message": "Preset added."})
+    return jsonify({"error": "Failed to add preset."}), 500
 
-    # This is the key: We cast 'data' to its specific, expected structure.
-    # This tells the linter that keys are strings and values are dictionaries
-    # containing strings and numbers.
-    typed_data = cast(Dict[str, Dict[str, Union[int, float]]], data)
-
-    errors: Dict[str, str] = {}
-    saved_items: List[Dict[str, Any]] = []
-
-    # The linter now knows the types of 'catalog_id' and 'values' here.
-    for catalog_id, values in typed_data.items():
-        try:
-            # We still need runtime checks because cast does nothing at runtime.
-            multiplier = float(values['multiplier'])
-            margin = float(values['margin'])
-            
-            success = catalog_manager.set_pricing_factors(catalog_id, multiplier, margin)
-
-            if success:
-                updated_item = catalog_manager.get_catalog_item(catalog_id)
-                saved_items.append(asdict(updated_item))
-            else:
-                errors[catalog_id] = "Failed to save in Google Sheet."
-
-        except (KeyError, TypeError, ValueError):
-            # A combined block to catch malformed 'values' objects or non-numeric data.
-            errors[catalog_id] = f"Invalid data format or value for item: {values}"
-        except Exception as e:
-            errors[catalog_id] = str(e)
-
-    if errors:
-        return jsonify({
-            "error": "Failed to save some items", 
-            "details": errors
-        }), 500
-
-    return jsonify({
-        "message": "Items saved successfully.",
-        "saved_items": saved_items
-    })
+@app.route('/api/catalog-preset', methods=['DELETE'])
+def delete_catalog_preset() -> Union[Response, Tuple[Response, int]]:
+    data: Any = request.get_json()
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid payload"}), 400
+    try:
+        payload = cast(Dict[str, Any], data)
+        catalog_id = str(payload['catalog_id'])
+        multiplier = float(payload['multiplier'])
+        margin = float(payload['margin'])
+    except (KeyError, TypeError, ValueError):
+        return jsonify({"error": "Invalid data"}), 400
+    success = catalog_manager.delete_catalog_preset(catalog_id, multiplier, margin)
+    if success:
+        return jsonify({"message": "Preset deleted."})
+    return jsonify({"error": "Preset not found or failed to delete."}), 404
 
 @app.route('/api/clear-s2j-entries', methods=['POST'])
 def clear_s2j_entries_route():
